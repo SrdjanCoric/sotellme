@@ -1,0 +1,38 @@
+# Knowledge base — licensed course material, runtime-only config (never committed)
+how-to-answer/
+how-to-interview/
+
+.claude
+
+CLAUDE.md
+
+# Working docs
+plans
+
+# Secrets & environment
+.env
+.env.*
+*.local
+
+# Langfuse (self-hosted) data
+langfuse/
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# Local data (real CVs, session artifacts — PII, never committed)
+data/
+
+# OS / editor
+.DS_Store
+.claude/settings.local.json
