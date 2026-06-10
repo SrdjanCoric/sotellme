@@ -1,6 +1,7 @@
-# Knowledge base — licensed course material, runtime-only config (never committed)
-how-to-answer/
-how-to-interview/
+# Knowledge base — licensed course material, runtime-only config (never committed).
+# Root-anchored so the synthetic fixture KBs under backend/tests/fixtures/ stay committed.
+/how-to-answer/
+/how-to-interview/
 
 .claude
 
