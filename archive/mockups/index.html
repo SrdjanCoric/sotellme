@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>sotellme — F3 mockup</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="mock-label">01 · Setup — empty <span>nothing connected yet, begin disabled</span></div>
+
+    <div class="proto-f3">
+      <div class="f3-setup">
+        <header class="f3-mast">
+          <span class="f3-wordmark">sotellme<span class="f3-wordmark-dot">.</span></span>
+          <span class="f3-mast-note">behavioral interview practice — text mode</span>
+        </header>
+
+        <main class="f3-setup-main">
+          <div class="f3-setup-head">
+            <h1>Three inputs. One conversation.</h1>
+            <p>
+              Your CV, the target role, and its job description feed a single interview that asks
+              about your actual work — then presses where the answers go thin.
+            </p>
+          </div>
+
+          <div class="f3-diagram">
+            <div class="f3-paths">
+              <section class="f3-path">
+                <header class="f3-path-head">
+                  <span class="f3-path-step">01</span>
+                  <h2>Your CV</h2>
+                </header>
+                <p class="f3-path-sub">PDF up to 5 MB, or paste the text.</p>
+                <p class="f3-field-label">Choose a file (simulated)</p>
+                <div class="f3-files">
+                  <button type="button" class="f3-file">
+                    <span class="f3-file-name">mira-stanic-cv.pdf</span>
+                    <span class="f3-file-size">1.2 MB</span>
+                  </button>
+                  <button type="button" class="f3-file">
+                    <span class="f3-file-name">mira-stanic-cv.docx</span>
+                    <span class="f3-file-size">0.4 MB</span>
+                  </button>
+                  <button type="button" class="f3-file">
+                    <span class="f3-file-name">cv-scan-2019.pdf</span>
+                    <span class="f3-file-size">8.4 MB</span>
+                  </button>
+                </div>
+                <button type="button" class="f3-mini">Paste the text instead</button>
+              </section>
+
+              <section class="f3-path">
+                <header class="f3-path-head">
+                  <span class="f3-path-step">02</span>
+                  <h2>The role</h2>
+                </header>
+                <p class="f3-path-sub">Who is interviewing you, and for what.</p>
+                <div class="f3-fields">
+                  <label>
+                    <span class="f3-field-label">Company</span>
+                    <input type="text" placeholder="e.g. Coreline" />
+                  </label>
+                  <label>
+                    <span class="f3-field-label">Role</span>
+                    <input type="text" placeholder="e.g. Senior Backend Engineer" />
+                  </label>
+                </div>
+                <button type="button" class="f3-mini">Fill with the sample role</button>
+              </section>
+
+              <section class="f3-path">
+                <header class="f3-path-head">
+                  <span class="f3-path-step">03</span>
+                  <h2>The job description</h2>
+                </header>
+                <p class="f3-path-sub">Paste it, or point at the posting.</p>
+                <div class="f3-tabs" role="tablist" aria-label="Job description source">
+                  <button type="button" role="tab" aria-selected="true" class="f3-tab is-active">
+                    Paste it
+                  </button>
+                  <button type="button" role="tab" aria-selected="false" class="f3-tab">
+                    Posting link
+                  </button>
+                </div>
+                <div class="f3-paste">
+                  <textarea
+                    rows="4"
+                    placeholder="Paste the job description"
+                    aria-label="Paste the job description"
+                  ></textarea>
+                  <div class="f3-paste-actions">
+                    <button type="button" class="f3-mini">Use sample excerpt</button>
+                    <button type="button" class="f3-btn f3-btn--small" disabled>
+                      Use this description
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <svg
+              class="f3-wires"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <g>
+                <path class="f3-wire-base" d="M 0 16 C 55 16, 45 50, 100 50" />
+                <path class="f3-wire-live" d="M 0 16 C 55 16, 45 50, 100 50" pathLength="100" />
+              </g>
+              <g>
+                <path class="f3-wire-base" d="M 0 50 C 55 50, 45 50, 100 50" />
+                <path class="f3-wire-live" d="M 0 50 C 55 50, 45 50, 100 50" pathLength="100" />
+              </g>
+              <g>
+                <path class="f3-wire-base" d="M 0 84 C 55 84, 45 50, 100 50" />
+                <path class="f3-wire-live" d="M 0 84 C 55 84, 45 50, 100 50" pathLength="100" />
+              </g>
+            </svg>
+
+            <aside class="f3-session">
+              <span class="f3-session-kicker">The session</span>
+              <h2>One focused interview</h2>
+              <p class="f3-session-sub">
+                Questions start from your own CV claims, not a question bank.
+              </p>
+              <ul class="f3-session-list">
+                <li><span>CV</span><span>waiting</span></li>
+                <li><span>Role</span><span>waiting</span></li>
+                <li><span>Description</span><span>waiting</span></li>
+              </ul>
+              <p class="f3-session-covers">
+                Like a real interview, where you won't see the questions coming.
+              </p>
+              <button type="button" class="f3-btn f3-btn--begin" disabled>
+                Begin the interview
+              </button>
+              <p class="f3-session-note">Connect all three paths to begin.</p>
+            </aside>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class="mock-label">
+      02 · Setup — ready <span>all three inputs captured, session armed</span>
+    </div>
+
+    <div class="proto-f3">
+      <div class="f3-setup">
+        <header class="f3-mast">
+          <span class="f3-wordmark">sotellme<span class="f3-wordmark-dot">.</span></span>
+          <span class="f3-mast-note">behavioral interview practice — text mode</span>
+        </header>
+
+        <main class="f3-setup-main">
+          <div class="f3-setup-head">
+            <h1>Three inputs. One conversation.</h1>
+            <p>
+              Your CV, the target role, and its job description feed a single interview that asks
+              about your actual work — then presses where the answers go thin.
+            </p>
+          </div>
+
+          <div class="f3-diagram">
+            <div class="f3-paths">
+              <section class="f3-path is-done">
+                <header class="f3-path-head">
+                  <span class="f3-path-step">01</span>
+                  <h2>Your CV</h2>
+                  <svg class="f3-check" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M2 6.2 5 9l5-6" fill="none" stroke="currentColor" stroke-width="1.8" />
+                  </svg>
+                </header>
+                <p class="f3-path-sub">PDF up to 5 MB, or paste the text.</p>
+                <div class="f3-captured">
+                  <p class="f3-captured-row">
+                    <span class="f3-captured-name">mira-stanic-cv.pdf</span>
+                    <span class="f3-captured-meta">1.2 MB</span>
+                    <button type="button" class="f3-mini">Remove</button>
+                  </p>
+                  <div class="f3-claims">
+                    <p class="f3-claims-head">4 claims the interviewer can press on</p>
+                    <ul>
+                      <li>
+                        <span class="f3-claim-text"
+                          >Cut settlement lag from 26 hours to 40 minutes by migrating the billing
+                          pipeline from a nightly batch job to event-driven processing</span
+                        >
+                        <span class="f3-claim-src">Senior Backend Engineer — Velora</span>
+                      </li>
+                      <li>
+                        <span class="f3-claim-text"
+                          >Ran on-call for the payments platform in a 12-person rotation; wrote the
+                          postmortem process now used across three teams</span
+                        >
+                        <span class="f3-claim-src">Senior Backend Engineer — Velora</span>
+                      </li>
+                      <li>
+                        <span class="f3-claim-text"
+                          >Mentored four engineers, two promoted to senior within 18 months</span
+                        >
+                        <span class="f3-claim-src">Senior Backend Engineer — Velora</span>
+                      </li>
+                      <li>
+                        <span class="f3-claim-text"
+                          >Rebuilt the rate-limiting layer in Go, holding p99 under 80 ms at 40k
+                          requests per second</span
+                        >
+                        <span class="f3-claim-src">Backend Engineer — Trellis Data</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section class="f3-path is-done">
+                <header class="f3-path-head">
+                  <span class="f3-path-step">02</span>
+                  <h2>The role</h2>
+                  <svg class="f3-check" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M2 6.2 5 9l5-6" fill="none" stroke="currentColor" stroke-width="1.8" />
+                  </svg>
+                </header>
+                <p class="f3-path-sub">Who is interviewing you, and for what.</p>
+                <div class="f3-fields">
+                  <label>
+                    <span class="f3-field-label">Company</span>
+                    <input type="text" value="Coreline" />
+                  </label>
+                  <label>
+                    <span class="f3-field-label">Role</span>
+                    <input type="text" value="Senior Backend Engineer, Payments Infrastructure" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="f3-path is-done">
+                <header class="f3-path-head">
+                  <span class="f3-path-step">03</span>
+                  <h2>The job description</h2>
+                  <svg class="f3-check" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M2 6.2 5 9l5-6" fill="none" stroke="currentColor" stroke-width="1.8" />
+                  </svg>
+                </header>
+                <p class="f3-path-sub">Paste it, or point at the posting.</p>
+                <div class="f3-captured">
+                  <p class="f3-captured-row">
+                    <span class="f3-captured-name">Posting read</span>
+                    <span class="f3-captured-meta">https://boards.greenhouse.io/coreline/jobs/7281904</span>
+                    <button type="button" class="f3-mini">Remove</button>
+                  </p>
+                </div>
+              </section>
+            </div>
+
+            <svg
+              class="f3-wires"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <g>
+                <path class="f3-wire-base" d="M 0 16 C 55 16, 45 50, 100 50" />
+                <path
+                  class="f3-wire-live is-on"
+                  d="M 0 16 C 55 16, 45 50, 100 50"
+                  pathLength="100"
+                />
+              </g>
+              <g>
+                <path class="f3-wire-base" d="M 0 50 C 55 50, 45 50, 100 50" />
+                <path
+                  class="f3-wire-live is-on"
+                  d="M 0 50 C 55 50, 45 50, 100 50"
+                  pathLength="100"
+                />
+              </g>
+              <g>
+                <path class="f3-wire-base" d="M 0 84 C 55 84, 45 50, 100 50" />
+                <path
+                  class="f3-wire-live is-on"
+                  d="M 0 84 C 55 84, 45 50, 100 50"
+                  pathLength="100"
+                />
+              </g>
+            </svg>
+
+            <aside class="f3-session is-ready">
+              <span class="f3-session-kicker">The session</span>
+              <h2>Coreline — Senior Backend Engineer, Payments Infrastructure</h2>
+              <p class="f3-session-sub">
+                Questions start from Mira Stanic’s own CV claims, not a question bank.
+              </p>
+              <ul class="f3-session-list">
+                <li class="is-in"><span>CV</span><span>mira-stanic-cv.pdf</span></li>
+                <li class="is-in"><span>Role</span><span>set</span></li>
+                <li class="is-in"><span>Description</span><span>posting read</span></li>
+              </ul>
+              <p class="f3-session-covers">
+                Like a real interview, where you won't see the questions coming.
+              </p>
+              <button type="button" class="f3-btn f3-btn--begin">Begin the interview</button>
+              <p class="f3-session-note">
+                When you begin, the setup falls away — just you and the questions.
+              </p>
+            </aside>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class="mock-label">03 · Interview <span>focus mode, current question + composer</span></div>
+
+    <div class="proto-f3">
+      <div class="f3-focus">
+        <header class="f3-focus-top">
+          <span class="f3-wordmark f3-wordmark--night"
+            >sotellme<span class="f3-wordmark-dot">.</span></span
+          >
+          <span class="f3-focus-label">Coreline — Senior Backend Engineer</span>
+          <div class="f3-focus-actions">
+            <button type="button" class="f3-nbtn" aria-expanded="false">Transcript · 4</button>
+            <button type="button" class="f3-nbtn">Pause</button>
+            <button type="button" class="f3-nbtn f3-nbtn--end">End session</button>
+          </div>
+        </header>
+
+        <main class="f3-stage">
+          <p class="f3-q-kicker">Question 3</p>
+          <h2 class="f3-question">
+            Tell me about a production failure that was genuinely your fault. Not your team’s —
+            yours.
+          </h2>
+
+          <div class="f3-composer">
+            <label class="f3-field-label f3-field-label--night" for="f3-answer">Your answer</label>
+            <textarea
+              id="f3-answer"
+              rows="6"
+              placeholder="Take me back to the moment it happened…"
+            ></textarea>
+            <div class="f3-composer-foot">
+              <span class="f3-composer-hint">
+                Voice mode is coming — for now, type what you would say out loud.
+              </span>
+              <button type="button" class="f3-btn" disabled>Submit answer</button>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <div class="mock-label">
+      04 · Interview — transcript open <span>running transcript drawer over focus mode</span>
+    </div>
+
+    <div class="proto-f3">
+      <div class="f3-focus">
+        <header class="f3-focus-top">
+          <span class="f3-wordmark f3-wordmark--night"
+            >sotellme<span class="f3-wordmark-dot">.</span></span
+          >
+          <span class="f3-focus-label">Coreline — Senior Backend Engineer</span>
+          <div class="f3-focus-actions">
+            <button type="button" class="f3-nbtn" aria-expanded="true">Transcript · 4</button>
+            <button type="button" class="f3-nbtn">Pause</button>
+            <button type="button" class="f3-nbtn f3-nbtn--end">End session</button>
+          </div>
+        </header>
+
+        <main class="f3-stage">
+          <p class="f3-q-kicker">Question 3</p>
+          <h2 class="f3-question">
+            Tell me about a production failure that was genuinely your fault. Not your team’s —
+            yours.
+          </h2>
+
+          <div class="f3-composer">
+            <label class="f3-field-label f3-field-label--night" for="f3-answer-2">Your answer</label>
+            <textarea
+              id="f3-answer-2"
+              rows="6"
+              placeholder="Take me back to the moment it happened…"
+            ></textarea>
+            <div class="f3-composer-foot">
+              <span class="f3-composer-hint">
+                Voice mode is coming — for now, type what you would say out loud.
+              </span>
+              <button type="button" class="f3-btn" disabled>Submit answer</button>
+            </div>
+          </div>
+        </main>
+
+        <aside class="f3-transcript" aria-label="Running transcript">
+          <header class="f3-transcript-head">
+            <h3>Transcript</h3>
+            <button type="button" class="f3-nbtn">Close</button>
+          </header>
+          <div class="f3-transcript-body">
+            <article class="f3-turn">
+              <p class="f3-turn-kicker">Question 1</p>
+              <p class="f3-turn-q">
+                Your CV says you cut settlement lag from 26 hours to 40 minutes. Take me back to
+                the start of that — what was actually broken, and how did it end up being your
+                problem?
+              </p>
+              <p class="f3-turn-ground">
+                asked from your CV — “Cut settlement lag from 26 hours to 40 minutes by migrating
+                the billing pipeline from a nightly batch job to event-driven processing”
+              </p>
+              <p class="f3-turn-a">
+                When I joined Velora the billing pipeline was a nightly batch job — if it failed at
+                3am, merchants didn't see their money for another full day, and we were getting
+                maybe two of those failures a month. Nobody owned it; it predated everyone on the
+                team. I asked to take it after the third support escalation landed on me anyway. I
+                spent two weeks instrumenting the existing job before changing anything, then
+                proposed moving to event-driven settlement in three stages so we never had a
+                big-bang cutover. The migration took a quarter. Settlement lag went from 26 hours
+                to about 40 minutes, and the failure mode changed from “merchants wait a day” to
+                “one event retries.” Support tickets about missing payouts dropped to zero the
+                month after we finished.
+              </p>
+            </article>
+            <article class="f3-turn">
+              <p class="f3-turn-kicker">Question 2</p>
+              <p class="f3-turn-q">
+                Tell me about a time you and a colleague genuinely disagreed on a technical call
+                that mattered.
+              </p>
+              <p class="f3-turn-a">
+                During the settlement migration, one of the senior engineers wanted to keep the
+                batch job as a fallback and I thought we should commit to events fully. We went
+                back and forth on it for a while. There was some tension but eventually we aligned
+                on the right approach and it worked out well in the end.
+              </p>
+            </article>
+            <article class="f3-turn f3-turn--probe">
+              <p class="f3-turn-kicker">follow-up</p>
+              <p class="f3-turn-q">
+                You went “back and forth for a while” and then “aligned” — that’s the part I’m
+                interested in. What did you actually do to move it from tension to agreement?
+              </p>
+              <p class="f3-turn-a">
+                I wrote a one-pager comparing the two failure modes and we walked through it
+                together. I also conceded part of his point — we kept the batch code deployable
+                for one quarter as an emergency lever, just not running. Having something concrete
+                to argue over instead of positions helped, and the quarter limit meant the
+                fallback couldn’t become permanent.
+              </p>
+            </article>
+            <article class="f3-turn f3-turn--probe">
+              <p class="f3-turn-kicker">follow-up</p>
+              <p class="f3-turn-q">
+                Did the deal hold? What happened to the fallback after that quarter?
+              </p>
+              <p class="f3-turn-a">
+                It held. We deleted the batch path on schedule and nobody ever invoked the
+                fallback. He reviewed the deletion PR himself, which felt like the real sign-off.
+              </p>
+            </article>
+            <article class="f3-turn f3-turn--now">
+              <p class="f3-turn-kicker">Question 3 · now</p>
+              <p class="f3-turn-q">
+                Tell me about a production failure that was genuinely your fault. Not your team’s
+                — yours.
+              </p>
+            </article>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="mock-label">
+      05 · Coaching report <span>verdict, per-answer feedback, competency board, drills</span>
+    </div>
+
+    <div class="proto-f3">
+      <div class="f3-report">
+        <header class="f3-mast">
+          <span class="f3-wordmark">sotellme<span class="f3-wordmark-dot">.</span></span>
+          <button type="button" class="f3-mini">Set up another session</button>
+        </header>
+
+        <main class="f3-report-main">
+          <p class="f3-kicker">Coaching report</p>
+          <h1>Coreline — Senior Backend Engineer</h1>
+          <p class="f3-report-sub">Mira Stanic · paused partway — 2 answers reviewed</p>
+
+          <section class="f3-card f3-verdict">
+            <p class="f3-card-kicker">The verdict</p>
+            <p class="f3-verdict-text">
+              You’re strongest when the story has numbers and you own the verb — the settlement
+              migration answer would pass at any senior loop. The pattern to fix: when a question
+              gets personal, like conflict or failure, your first answer goes vague and the detail
+              only shows up after a follow-up. In a real interview you don’t always get the
+              follow-up. Lead with the specifics you clearly have.
+            </p>
+          </section>
+
+          <p class="f3-kicker f3-kicker--section">Answer by answer</p>
+          <section class="f3-card f3-answer">
+            <div class="f3-answer-tags">
+              <span class="f3-tag">ownership</span>
+              <span class="f3-chip f3-chip--strong">strong</span>
+            </div>
+            <h2>
+              Your CV says you cut settlement lag from 26 hours to 40 minutes. Take me back to the
+              start of that — what was actually broken, and how did it end up being your problem?
+            </h2>
+            <blockquote class="f3-excerpt">
+              I asked to take it after the third support escalation landed on me anyway.
+              <mark>I spent two weeks instrumenting the existing job before changing anything<sup>1</sup></mark>, then proposed moving to event-driven settlement in three stages so we never had a
+              big-bang cutover. …
+              <mark>Support tickets about missing payouts dropped to zero<sup>2</sup></mark> the
+              month after we finished.
+            </blockquote>
+            <ol class="f3-notes">
+              <li>
+                <span class="f3-note-n">1</span>
+                <span>Judgment, not just activity — this is what senior sounds like.</span>
+              </li>
+              <li>
+                <span class="f3-note-n">2</span>
+                <span>An outcome with a number, tied to the people it affected.</span>
+              </li>
+            </ol>
+            <dl class="f3-gapfix">
+              <div>
+                <dt>The gap</dt>
+                <dd>
+                  Nothing structural. If you want one more notch: say how many merchants the
+                  26-hour lag actually touched.
+                </dd>
+              </div>
+              <div>
+                <dt>The fix</dt>
+                <dd>Keep this one as-is. It’s your opener.</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="f3-card f3-answer">
+            <div class="f3-answer-tags">
+              <span class="f3-tag">conflict</span>
+              <span class="f3-chip f3-chip--mixed">mixed</span>
+            </div>
+            <h2>
+              Tell me about a time you and a colleague genuinely disagreed on a technical call that
+              mattered.
+            </h2>
+            <blockquote class="f3-excerpt">
+              <mark>We went back and forth on it for a while<sup>1</sup></mark>. There was some
+              tension but eventually we aligned on the right approach and
+              <mark>it worked out well in the end<sup>2</sup></mark>.
+            </blockquote>
+            <ol class="f3-notes">
+              <li>
+                <span class="f3-note-n">1</span>
+                <span
+                  >A summary of a conflict, not a conflict — the interviewer can’t see you in
+                  it.</span
+                >
+              </li>
+              <li>
+                <span class="f3-note-n">2</span>
+                <span>What worked? You never say what the outcome was — name it.</span>
+              </li>
+            </ol>
+            <dl class="f3-gapfix">
+              <div>
+                <dt>The gap</dt>
+                <dd>
+                  Your first answer hid the one-pager, the concession, and the deletion PR — all of
+                  it surfaced only under probing.
+                </dd>
+              </div>
+              <div>
+                <dt>The fix</dt>
+                <dd>
+                  Open with the one-pager move. “We disagreed, so I wrote down both failure modes
+                  and made the argument concrete” is a first sentence, not a buried detail.
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <p class="f3-kicker f3-kicker--section">Where you stand</p>
+          <section class="f3-card f3-comps">
+            <div class="f3-comp-row">
+              <span class="f3-comp-name">ownership</span>
+              <span class="f3-chip f3-chip--strong">strong</span>
+              <span class="f3-comp-note"
+                >One complete story with a baseline, a decision, and a measured result.</span
+              >
+            </div>
+            <div class="f3-comp-row">
+              <span class="f3-comp-name">conflict</span>
+              <span class="f3-chip f3-chip--mixed">mixed</span>
+              <span class="f3-comp-note"
+                >The substance exists but arrived two probes late. Lead with it.</span
+              >
+            </div>
+            <div class="f3-comp-row is-uncovered">
+              <span class="f3-comp-name">failure</span>
+              <span class="f3-chip f3-chip--not-covered">not covered</span>
+              <span class="f3-comp-note"
+                >Session paused before this came up. There’s a drill for it below.</span
+              >
+            </div>
+            <div class="f3-comp-row is-uncovered">
+              <span class="f3-comp-name">ambiguity</span>
+              <span class="f3-chip f3-chip--not-covered">not covered</span>
+              <span class="f3-comp-note">Not reached in this session.</span>
+            </div>
+            <div class="f3-comp-row is-uncovered">
+              <span class="f3-comp-name">impact</span>
+              <span class="f3-chip f3-chip--not-covered">not covered</span>
+              <span class="f3-comp-note">Not reached in this session.</span>
+            </div>
+          </section>
+
+          <p class="f3-kicker f3-kicker--section">Drills before the real thing</p>
+          <div class="f3-drills">
+            <section class="f3-card f3-drill">
+              <span class="f3-tag">conflict</span>
+              <h3>Numbers first</h3>
+              <p>
+                Re-answer the fallback disagreement in 90 seconds. Your last sentence must contain
+                a number or a concrete artifact — a PR, a document, a date.
+              </p>
+            </section>
+            <section class="f3-card f3-drill">
+              <span class="f3-tag">failure</span>
+              <h3>The failure you own</h3>
+              <p>
+                Pick one incident where the mistake was yours. Write the first sentence so it
+                names your decision — “I shipped…”, “I skipped…” — and practice saying it without
+                softening it.
+              </p>
+            </section>
+            <section class="f3-card f3-drill">
+              <span class="f3-tag">ownership</span>
+              <h3>Cut the warm-up</h3>
+              <p>
+                Record your settlement story and listen to the first 20 seconds. If the setup
+                takes more than two sentences, trim until it doesn’t.
+              </p>
+            </section>
+          </div>
+
+          <div class="f3-report-foot">
+            <button type="button" class="f3-btn">Set up another session</button>
+          </div>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>
