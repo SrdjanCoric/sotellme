@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SoTellMe · Mock behavioral interviews</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="wordmark" href="landing.html"><span class="wm-mark">‹</span>SoTellMe<span class="wm-mark">›</span></a>
+  <nav class="site-nav">
+    <a class="nav-link" href="app.html">Sign in</a>
+    <a class="btn btn-primary btn-small" href="app.html">Start practicing</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <span class="mono-label">Behavioral interview practice</span>
+      <h1>It asks about your real work, then asks the question you were hoping to avoid.</h1>
+      <p class="hero-sub">Upload your CV and point it at the role you want. The interview adapts to your answers: when a story lands it moves on, and when you say &lsquo;it went well&rsquo; it asks how well. Afterward you get a review that names every weak answer and the fix.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="app.html">Start a practice interview</a>
+        <span class="mono-label cta-note">Free while it&rsquo;s early</span>
+      </div>
+    </div>
+
+    <div class="hero-stage">
+      <svg class="hero-diagram" viewBox="0 0 640 420" role="img" aria-label="Diagram: your CV, the role, and the company converge into one session, and the session asks the first question.">
+        <path class="nd-base" d="M128 70 C 260 70, 340 170, 452 170"/>
+        <path class="nd-base" d="M128 170 C 260 170, 340 170, 452 170"/>
+        <path class="nd-base" d="M128 270 C 260 270, 340 170, 452 170"/>
+        <path class="nd-base" d="M480 198 C 480 268, 320 290, 320 416"/>
+
+        <path class="nd-draw nd-draw-1" pathLength="1" d="M128 70 C 260 70, 340 170, 452 170"/>
+        <path class="nd-draw nd-draw-2" pathLength="1" d="M128 170 C 260 170, 340 170, 452 170"/>
+        <path class="nd-draw nd-draw-3" pathLength="1" d="M128 270 C 260 270, 340 170, 452 170"/>
+        <path class="nd-draw nd-draw-out" pathLength="1" d="M480 198 C 480 268, 320 290, 320 416"/>
+
+        <path class="nd-pulse nd-pulse-1" pathLength="1" d="M128 70 C 260 70, 340 170, 452 170"/>
+        <path class="nd-pulse nd-pulse-2" pathLength="1" d="M128 170 C 260 170, 340 170, 452 170"/>
+        <path class="nd-pulse nd-pulse-3" pathLength="1" d="M128 270 C 260 270, 340 170, 452 170"/>
+        <path class="nd-pulse nd-pulse-out" pathLength="1" d="M480 198 C 480 268, 320 290, 320 416"/>
+
+        <circle class="nd-input" cx="120" cy="70" r="6"/>
+        <circle class="nd-input" cx="120" cy="170" r="6"/>
+        <circle class="nd-input" cx="120" cy="270" r="6"/>
+
+        <text class="nd-label" x="104" y="74" text-anchor="end">YOUR CV</text>
+        <text class="nd-label" x="104" y="174" text-anchor="end">THE ROLE</text>
+        <text class="nd-label" x="104" y="274" text-anchor="end">THE COMPANY</text>
+
+        <circle class="nd-session-ring" cx="480" cy="170" r="28"/>
+        <circle class="nd-session-core" cx="480" cy="170" r="9"/>
+        <text class="nd-label nd-label-session" x="520" y="174">SESSION</text>
+      </svg>
+
+      <div class="hero-question">
+        <span class="hq-port" aria-hidden="true"></span>
+        <span class="mono-label">First question</span>
+        <p class="hq-text" id="typed-question">Tell me about a time you disagreed with a technical decision and what you did about it.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="thread" aria-hidden="true"></div>
+
+  <section class="section">
+    <div class="section-head reveal">
+      <span class="mono-label">How it works</span>
+      <h2>From your inputs to your review</h2>
+    </div>
+    <div class="beats">
+      <article class="beat reveal">
+        <span class="beat-port" aria-hidden="true"></span>
+        <span class="mono-label beat-idx">01</span>
+        <h3>Hand over your experience</h3>
+        <p>Upload your CV or paste it, then add the company, role, and job description. Questions come from work you actually did and what this job calls for.</p>
+      </article>
+      <article class="beat reveal">
+        <span class="beat-port" aria-hidden="true"></span>
+        <span class="mono-label beat-idx">02</span>
+        <h3>Take the interview</h3>
+        <p>Complete answers move the interview forward, and vague ones get the follow-up you&rsquo;d get in the real room.</p>
+      </article>
+      <article class="beat reveal">
+        <span class="beat-port" aria-hidden="true"></span>
+        <span class="mono-label beat-idx">03</span>
+        <h3>Read the review</h3>
+        <p>Every answer is assessed with the weak spot named in plain words, plus drills for what kept coming up.</p>
+      </article>
+    </div>
+  </section>
+
+  <div class="thread" aria-hidden="true"></div>
+
+  <section class="section">
+    <div class="section-head reveal">
+      <span class="mono-label">The difference</span>
+      <h2>Watch it press a vague answer</h2>
+      <p class="section-lead">Most practice tools accept whatever you say and move on. A real interviewer doesn&rsquo;t, so this one doesn&rsquo;t either.</p>
+    </div>
+    <div class="exchange reveal">
+      <div class="x-row">
+        <span class="x-who">Interviewer</span>
+        <p>Tell me about a time you disagreed with a technical decision and what you did about it.</p>
+      </div>
+      <div class="x-row">
+        <span class="x-who">You</span>
+        <p>Our team lead wanted to roll our own queue and I felt strongly we should use something managed, so I pushed back and <span class="vague">eventually we aligned and the project worked out well</span>.</p>
+      </div>
+      <div class="x-row x-probe">
+        <span class="x-who">Follow-up</span>
+        <p>You said it worked out well. What shipped, and what does &lsquo;well&rsquo; look like in numbers?</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="thread" aria-hidden="true"></div>
+
+  <section class="section">
+    <div class="section-head reveal">
+      <span class="mono-label">The review</span>
+      <h2>It quotes you back</h2>
+    </div>
+    <figure class="review-card reveal">
+      <span class="mono-label">From your answer</span>
+      <blockquote class="rv-quote">&ldquo;eventually we aligned and the project worked out well&rdquo;</blockquote>
+      <span class="mono-label">The coaching</span>
+      <p class="rv-text">This is where the story loses its proof. &lsquo;Aligned&rsquo; hides what you actually did, and &lsquo;well&rsquo; is a verdict with no evidence. Say what you proposed, what changed because of it, and the number that shows it: latency, cost, incidents, anything you can defend.</p>
+    </figure>
+  </section>
+
+  <div class="thread" aria-hidden="true"></div>
+
+  <section class="section cta-section reveal">
+    <h2>Run one before the real one.</h2>
+    <a class="btn btn-primary" href="app.html">Start a practice interview</a>
+    <span class="mono-label cta-note">Free while it&rsquo;s early</span>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <a class="wordmark wordmark-small" href="landing.html"><span class="wm-mark">‹</span>SoTellMe<span class="wm-mark">›</span></a>
+  <span class="mono-label">&copy; 2026 SoTellMe</span>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
