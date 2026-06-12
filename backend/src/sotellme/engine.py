@@ -1,9 +1,10 @@
 import sqlite3
 import uuid
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, Self, TypedDict, cast, get_args
+from typing import Protocol, Self, TypedDict, get_args
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.runnables import RunnableConfig
@@ -13,47 +14,64 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
+from sotellme.assessor import AnswerAssessment, StarFlags, TopicAssessment
 from sotellme.coverage import (
-    DEFAULT_FOLLOWUP_CAP,
-    DEFAULT_MAX_COMPETENCIES,
-    MOTIVATION_TOPICS,
-    CoverageState,
-    Gap,
-    Motivation,
-    MotivationTopic,
-    NextCompetency,
-    Probe,
-    StarFlags,
-    next_action,
-    plan_competencies,
+    DEFAULT_FOLLOW_UP_CAP,
+    DEFAULT_QUESTION_CAP,
+    EnvelopeState,
+    follow_up_allowed,
+    question_allowed,
 )
+from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.extraction import extract_cv_text
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Project, Role
-from sotellme.role import CompetencyWeight, RoleContext, TargetLevel, default_role_context
+from sotellme.role import (
+    CompetencyWeight,
+    RoleContext,
+    TargetLevel,
+    default_role_context,
+    level_emphasis,
+)
 
-CHECKPOINTED_TYPES = (CandidateProfile, Role, Project, Turn, RoleContext, CompetencyWeight)
+CHECKPOINTED_TYPES = (
+    CandidateProfile,
+    Role,
+    Project,
+    Turn,
+    RoleContext,
+    CompetencyWeight,
+    StarFlags,
+    AnswerAssessment,
+    TopicAssessment,
+    DirectorDecision,
+)
+
+ENVELOPE_WRAP_REASON = "The session envelope is closed; the interview ends here."
+
+FOLLOW_UPS_EXHAUSTED_WRAP_REASON = (
+    "Follow-ups on this topic are exhausted and the director offered no new topic; "
+    "the interview ends here."
+)
 
 ProfileParser = Callable[[str], CandidateProfile]
-StarFlagger = Callable[[str], StarFlags]
+Assessor = Callable[[str, Sequence[Turn]], AnswerAssessment]
 RoleBuilder = Callable[[str], RoleContext]
+Researcher = Callable[[str, RoleContext], str]
+
+
+class Director(Protocol):
+    def decide(self, situation: DirectorSituation) -> DirectorDecision: ...
 
 
 class Interviewer(Protocol):
-    def competency_question(
-        self, profile: CandidateProfile, transcript: Sequence[Turn], competency: str
-    ) -> str: ...
-
-    def probe_question(
-        self, profile: CandidateProfile, transcript: Sequence[Turn], gaps: tuple[Gap, ...]
-    ) -> str: ...
-
-    def motivation_question(
+    def question_for(
         self,
+        decision: DirectorDecision,
+        profile: CandidateProfile,
         context: RoleContext,
-        posting_text: str,
+        brief: str,
         transcript: Sequence[Turn],
-        topic: MotivationTopic,
     ) -> str: ...
 
     def closing_turn(self, transcript: Sequence[Turn]) -> str: ...
@@ -69,15 +87,15 @@ class InterviewState(TypedDict, total=False):
     posting_text: str
     profile: CandidateProfile
     role_context: RoleContext
-    competency_plan: list[str]
-    competency_index: int
-    motivation_topics: list[str]
-    motivation_asked: int
+    emphasis: list[str]
+    company_brief: str
     question: str
     transcript: list[Turn]
-    followups_used: int
-    gaps: list[Gap]
-    decision: str
+    assessments: list[TopicAssessment]
+    questions_asked: int
+    consecutive_follow_ups: int
+    current_topic: str
+    decision: DirectorDecision
     closing: str
 
 
@@ -109,6 +127,11 @@ def _ask_level(state: InterviewState) -> InterviewState:
     return {"role_context": context.model_copy(update={"target_level": level})}
 
 
+def _derive_emphasis(state: InterviewState) -> InterviewState:
+    level = state["role_context"].target_level
+    return {"emphasis": list(level_emphasis(level)) if level is not None else []}
+
+
 def _await_answer(state: InterviewState) -> InterviewState:
     answer = interrupt({"question": state["question"]})
     turn = Turn(question=state["question"], answer=str(answer))
@@ -120,11 +143,13 @@ class InterviewEngine:
         self,
         data_dir: Path,
         profile_parser: ProfileParser,
-        star_flagger: StarFlagger,
+        assessor: Assessor,
+        director: Director,
         interviewer: Interviewer,
         role_builder: RoleBuilder,
-        followup_cap: int = DEFAULT_FOLLOWUP_CAP,
-        max_competencies: int = DEFAULT_MAX_COMPETENCIES,
+        researcher: Researcher,
+        question_cap: int = DEFAULT_QUESTION_CAP,
+        follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
         callbacks: list[BaseCallbackHandler] | None = None,
     ) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -138,101 +163,107 @@ class InterviewEngine:
         def build_context(state: InterviewState) -> InterviewState:
             posting = state.get("posting_text")
             context = role_builder(posting) if posting else default_role_context()
+            return {"role_context": context}
+
+        def research(state: InterviewState) -> InterviewState:
+            posting = state.get("posting_text")
+            if not posting:
+                return {"company_brief": ""}
+            try:
+                brief = researcher(posting, state["role_context"])
+            except Exception:  # research is an enhancement; it must never kill the session
+                brief = ""
+            return {"company_brief": brief}
+
+        def direct(state: InterviewState) -> InterviewState:
+            envelope = EnvelopeState(
+                questions_asked=state.get("questions_asked", 0),
+                consecutive_follow_ups=state.get("consecutive_follow_ups", 0),
+            )
+            if not question_allowed(envelope, question_cap):
+                return {"decision": DirectorDecision(action="wrap_up", reason=ENVELOPE_WRAP_REASON)}
+            situation = DirectorSituation(
+                profile=state["profile"],
+                context=state["role_context"],
+                emphasis=tuple(state.get("emphasis", [])),
+                brief=state.get("company_brief", ""),
+                transcript=state.get("transcript", []),
+                assessments=state.get("assessments", []),
+                questions_asked=state.get("questions_asked", 0),
+                question_cap=question_cap,
+                consecutive_follow_ups=envelope.consecutive_follow_ups,
+                follow_up_cap=follow_up_cap,
+            )
+            decision = director.decide(situation)
+            if decision.action == "follow_up" and not follow_up_allowed(envelope, follow_up_cap):
+                decision = director.decide(replace(situation, follow_ups_exhausted=True))
+                if decision.action == "follow_up":
+                    decision = DirectorDecision(
+                        action="wrap_up", reason=FOLLOW_UPS_EXHAUSTED_WRAP_REASON
+                    )
+            return {"decision": decision}
+
+        def pose_question(state: InterviewState) -> InterviewState:
+            decision = state["decision"]
+            question = interviewer.question_for(
+                decision,
+                state["profile"],
+                state["role_context"],
+                state.get("company_brief", ""),
+                state.get("transcript", []),
+            )
+            topic = (
+                decision.subject
+                if decision.action == "new_topic"
+                else state.get("current_topic", "")
+            )
+            follow_ups = (
+                state.get("consecutive_follow_ups", 0) + 1 if decision.action == "follow_up" else 0
+            )
             return {
-                "role_context": context,
-                "competency_plan": list(plan_competencies(context, max_competencies)),
-                "competency_index": 0,
-                "motivation_topics": list(MOTIVATION_TOPICS) if posting else [],
-                "motivation_asked": 0,
+                "question": question,
+                "questions_asked": state.get("questions_asked", 0) + 1,
+                "consecutive_follow_ups": follow_ups,
+                "current_topic": topic,
             }
 
-        def pose_competency(state: InterviewState) -> InterviewState:
-            competency = state["competency_plan"][state.get("competency_index", 0)]
-            question = interviewer.competency_question(
-                state["profile"], state.get("transcript", []), competency
-            )
-            return {"question": question, "followups_used": 0}
-
         def assess(state: InterviewState) -> InterviewState:
-            in_motivation = state.get("motivation_asked", 0) > 0
-            index = state.get("competency_index", 0)
-            action = next_action(
-                CoverageState(
-                    flags=None if in_motivation else star_flagger(state["transcript"][-1].answer),
-                    followups_used=state.get("followups_used", 0),
-                    competencies_remaining=()
-                    if in_motivation
-                    else tuple(state["competency_plan"][index + 1 :]),
-                    motivation_remaining=tuple(
-                        cast(
-                            list[MotivationTopic],
-                            state.get("motivation_topics", []),
-                        )[state.get("motivation_asked", 0) :]
-                    ),
-                    in_motivation=in_motivation,
-                ),
-                followup_cap=followup_cap,
-            )
-            if isinstance(action, Probe):
-                return {"decision": "probe", "gaps": list(action.gaps)}
-            if isinstance(action, NextCompetency):
-                return {"decision": "next_competency", "competency_index": index + 1}
-            if isinstance(action, Motivation):
-                return {"decision": "motivation"}
-            return {"decision": "finish"}
-
-        def pose_probe(state: InterviewState) -> InterviewState:
-            question = interviewer.probe_question(
-                state["profile"], state["transcript"], tuple(state["gaps"])
-            )
-            return {"question": question, "followups_used": state.get("followups_used", 0) + 1}
-
-        def pose_motivation(state: InterviewState) -> InterviewState:
-            asked = state.get("motivation_asked", 0)
-            topic = cast(list[MotivationTopic], state["motivation_topics"])[asked]
-            question = interviewer.motivation_question(
-                state["role_context"],
-                state.get("posting_text", ""),
-                state["transcript"],
-                topic,
-            )
-            return {"question": question, "motivation_asked": asked + 1}
+            topic = state.get("current_topic", "")
+            assessment = assessor(topic, state["transcript"])
+            record = TopicAssessment(topic=topic, assessment=assessment)
+            return {"assessments": [*state.get("assessments", []), record]}
 
         def pose_closing(state: InterviewState) -> InterviewState:
-            return {"closing": interviewer.closing_turn(state["transcript"])}
+            return {"closing": interviewer.closing_turn(state.get("transcript", []))}
 
-        def route_after_assess(state: InterviewState) -> str:
-            return {
-                "probe": "pose_probe",
-                "next_competency": "pose_competency",
-                "motivation": "pose_motivation",
-            }.get(state["decision"], "pose_closing")
+        def route_after_direct(state: InterviewState) -> str:
+            if state["decision"].action in ("wrap_up", "terminate"):
+                return "pose_closing"
+            return "pose_question"
 
         graph = StateGraph(InterviewState)
         graph.add_node("extract", _extract)
         graph.add_node("parse_profile", parse_profile)
         graph.add_node("build_context", build_context)
         graph.add_node("ask_level", _ask_level)
-        graph.add_node("pose_competency", pose_competency)
+        graph.add_node("derive_emphasis", _derive_emphasis)
+        graph.add_node("research", research)
+        graph.add_node("direct", direct)
+        graph.add_node("pose_question", pose_question)
         graph.add_node("await_answer", _await_answer)
         graph.add_node("assess", assess)
-        graph.add_node("pose_probe", pose_probe)
-        graph.add_node("pose_motivation", pose_motivation)
         graph.add_node("pose_closing", pose_closing)
         graph.add_edge(START, "extract")
         graph.add_edge("extract", "parse_profile")
         graph.add_edge("parse_profile", "build_context")
         graph.add_edge("build_context", "ask_level")
-        graph.add_edge("ask_level", "pose_competency")
-        graph.add_edge("pose_competency", "await_answer")
+        graph.add_edge("ask_level", "derive_emphasis")
+        graph.add_edge("derive_emphasis", "research")
+        graph.add_edge("research", "direct")
+        graph.add_conditional_edges("direct", route_after_direct, ["pose_question", "pose_closing"])
+        graph.add_edge("pose_question", "await_answer")
         graph.add_edge("await_answer", "assess")
-        graph.add_conditional_edges(
-            "assess",
-            route_after_assess,
-            ["pose_probe", "pose_competency", "pose_motivation", "pose_closing"],
-        )
-        graph.add_edge("pose_probe", "await_answer")
-        graph.add_edge("pose_motivation", "await_answer")
+        graph.add_edge("assess", "direct")
         graph.add_edge("pose_closing", END)
         serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED_TYPES)
         self._graph = graph.compile(checkpointer=SqliteSaver(self._conn, serde=serde))

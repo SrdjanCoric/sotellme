@@ -1,14 +1,15 @@
 from stubs import StubChatModel
 
+from sotellme.director import DirectorDecision
 from sotellme.interviewer import (
     LLMInterviewer,
     Turn,
+    render_directive,
     render_profile,
     render_role_context,
     render_transcript,
 )
 from sotellme.profile import CandidateProfile, Project, Role
-from sotellme.prompts import GAP_GUIDANCE, MOTIVATION_GUIDANCE
 from sotellme.role import CompetencyWeight, RoleContext
 
 PROFILE = CandidateProfile(
@@ -16,6 +17,12 @@ PROFILE = CandidateProfile(
     projects=[Project(name="openroster", description="Shift-planning library")],
     quantified_claims=["Cut latency by 38%"],
     technologies=["Python", "Kafka"],
+)
+
+CONTEXT = RoleContext(
+    company="Acme",
+    role_title="Backend Engineer",
+    competencies=[CompetencyWeight(name="ownership", weight=5)],
 )
 
 
@@ -51,56 +58,72 @@ def test_role_context_renders_without_the_target_level() -> None:
     assert "senior" not in text.lower()
 
 
-def test_competency_question_is_grounded_in_the_rendered_profile() -> None:
-    model = StubChatModel(text_response="  Tell me about the latency work at Acme?  ")
-    interviewer = LLMInterviewer(model)
-
-    question = interviewer.competency_question(PROFILE, [], "impact")
-
-    assert question == "Tell me about the latency work at Acme?"
-    human_texts = [text for role, text in model.seen_inputs[0] if role == "human"]
-    assert "Cut latency by 38%" in human_texts[0]
-    assert "impact" in human_texts[0]
-
-
-def test_motivation_question_carries_the_posting_and_topic() -> None:
-    model = StubChatModel(text_response="Why Acme, of all places?")
-    interviewer = LLMInterviewer(model)
-    context = RoleContext(
-        company="Acme",
-        competencies=[CompetencyWeight(name="ownership", weight=5)],
-    )
-    transcript = [Turn(question="What happened?", answer="We migrated.")]
-
-    question = interviewer.motivation_question(
-        context, "Acme builds billing software.", transcript, "company"
+def test_a_follow_up_directive_names_the_subject_and_reason() -> None:
+    decision = DirectorDecision(
+        action="follow_up", subject="the migration claim", reason="impact left unexplained"
     )
 
-    assert question == "Why Acme, of all places?"
+    directive = render_directive(decision)
+
+    assert "Follow up on this from their last answer: the migration claim." in directive
+    assert "impact left unexplained" in directive
+
+
+def test_a_new_topic_directive_names_the_topic() -> None:
+    decision = DirectorDecision(
+        action="new_topic", subject="their most significant project", reason="the deep dive"
+    )
+
+    directive = render_directive(decision)
+
+    assert "The interview now turns to: their most significant project." in directive
+    assert "the deep dive" in directive
+
+
+def test_a_follow_up_directive_becomes_a_question_with_full_grounding() -> None:
+    model = StubChatModel(text_response="  How did the scheduler rewrite land?  ")
+    interviewer = LLMInterviewer(model)
+    transcript = [Turn(question="What happened?", answer="I rewrote the scheduler alone.")]
+    decision = DirectorDecision(
+        action="follow_up", subject="rewrote the scheduler alone", reason="ownership signal"
+    )
+
+    question = interviewer.question_for(
+        decision, PROFILE, CONTEXT, "Acme builds billing software.", transcript
+    )
+
+    assert question == "How did the scheduler rewrite land?"
     human_texts = [text for role, text in model.seen_inputs[0] if role == "human"]
+    assert "rewrote the scheduler alone" in human_texts[0]
+    assert "ownership signal" in human_texts[0]
     assert "Acme builds billing software." in human_texts[0]
-    assert MOTIVATION_GUIDANCE["company"] in human_texts[0]
+    assert "Cut latency by 38%" in human_texts[0]
+    assert "Q: What happened?" in human_texts[0]
 
 
-def test_probe_question_carries_the_transcript_and_the_primary_gap() -> None:
-    model = StubChatModel(text_response="And how did that end up?")
+def test_a_new_topic_directive_on_an_empty_transcript_opens_the_interview() -> None:
+    model = StubChatModel(text_response="So, tell me a bit about yourself?")
     interviewer = LLMInterviewer(model)
-    transcript = [Turn(question="What happened?", answer="We migrated.")]
+    decision = DirectorDecision(
+        action="new_topic", subject="who they are and their background", reason="the opener"
+    )
 
-    question = interviewer.probe_question(PROFILE, transcript, ("result", "quantified_result"))
+    question = interviewer.question_for(decision, PROFILE, CONTEXT, "", [])
 
-    assert question == "And how did that end up?"
+    assert question == "So, tell me a bit about yourself?"
     human_texts = [text for role, text in model.seen_inputs[0] if role == "human"]
-    assert "Q: What happened?\nA: We migrated." in human_texts[0]
-    assert GAP_GUIDANCE["result"] in human_texts[0]
+    assert "who they are and their background" in human_texts[0]
+    assert "<transcript>" not in human_texts[0]
+    assert "<brief>" not in human_texts[0]
 
 
 def test_interviewer_output_is_sanitized_of_ai_dashes() -> None:
     model = StubChatModel(text_response="The pipeline shipped—what changed after that?")
     interviewer = LLMInterviewer(model)
     transcript = [Turn(question="What happened?", answer="We migrated.")]
+    decision = DirectorDecision(action="follow_up", subject="the pipeline", reason="the ending")
 
-    question = interviewer.probe_question(PROFILE, transcript, ("result",))
+    question = interviewer.question_for(decision, PROFILE, CONTEXT, "", transcript)
 
     assert question == "The pipeline shipped - what changed after that?"
 

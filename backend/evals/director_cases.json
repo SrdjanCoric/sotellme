@@ -1,0 +1,481 @@
+{
+ "description": "Per-turn decisions the interview director must get right. Each case is a full situation (profile, role details, brief, transcript, assessment notes, question count) with the set of acceptable actions; the check is exact membership. The stop-timing cases pin Phase 4a's acceptance criterion that session length follows the director's own judgment: a strong, fully-probed session wraps well short of the cap, early strength never wraps, an unexplained impact claim draws a follow-up, and a topic that stays vague after repeated probing is moved past rather than belabored. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "profile": {
+  "roles": [
+   {
+    "title": "Senior Software Engineer",
+    "organization": "Helioscope Analytics",
+    "period": "2021 - present"
+   },
+   {
+    "title": "Software Engineer",
+    "organization": "Dunav Logistics",
+    "period": "2017 - 2021"
+   }
+  ],
+  "projects": [
+   {
+    "name": "openroster",
+    "description": "Open-source shift-planning library in Python with 2300 GitHub stars; maintainer since 2019."
+   }
+  ],
+  "quantified_claims": [
+   "cutting data latency from 4 hours to 90 seconds",
+   "Mentored a team of 6 engineers through the company's first SOC 2 audit",
+   "saving an estimated 40000 EUR per year in demurrage fees"
+  ],
+  "technologies": [
+   "Python",
+   "Go",
+   "Kafka",
+   "Redis",
+   "PostgreSQL"
+  ]
+ },
+ "role_context": {
+  "company": "Brightmark Health",
+  "role_title": "Senior Backend Engineer",
+  "competencies": [
+   {
+    "name": "ownership",
+    "weight": 5
+   },
+   {
+    "name": "impact",
+    "weight": 4
+   },
+   {
+    "name": "conflict",
+    "weight": 3
+   },
+   {
+    "name": "failure",
+    "weight": 2
+   },
+   {
+    "name": "ambiguity",
+    "weight": 2
+   }
+  ],
+  "framework": null,
+  "target_level": null
+ },
+ "emphasis": [
+  "problem solving",
+  "delivery",
+  "learning",
+  "initiative",
+  "trust and conflict"
+ ],
+ "brief": "Brightmark Health builds appointment scheduling and triage software for rural clinics. Its backend keeps patient-facing scheduling reliable for practices with no IT staff of their own; downtime means missed appointments for real patients.",
+ "question_cap": 20,
+ "cases": [
+  {
+   "name": "an-empty-transcript-opens-a-topic",
+   "transcript": [],
+   "assessments": [],
+   "questions_asked": 0,
+   "allowed_actions": [
+    "new_topic"
+   ]
+  },
+  {
+   "name": "a-strong-fully-probed-session-wraps-early",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "I'm a backend engineer, eight years in. I started at Dunav Logistics automating port operations, and for the last four years I've run data platform work at Helioscope Analytics. The thread is that I keep ending up owning the systems nobody else wants to touch and making them boring and reliable. Most recently that meant rebuilding our ingestion pipeline as streaming, which took dashboard latency from 4 hours to 90 seconds."
+    },
+    {
+     "question": "Let's dig into that streaming rebuild. What was going on before it, and why was it yours?",
+     "answer": "Clients were churning over stale dashboards and the renewal pipeline made it urgent. I'd built the original batch system, so I knew where the bodies were buried. I proposed the streaming design, got two engineers seconded to me, and we ran old and new in parallel for two weeks to prove parity before cutover."
+    },
+    {
+     "question": "What was the hardest call you made during the cutover?",
+     "answer": "Keeping the parallel run going a second week after a partition-skew bug, even though sales wanted to announce. I showed the renewal team the skew numbers, took the heat for the delay, and we cut over clean. The client renewed, and the pipeline hasn't paged anyone in over a year."
+    },
+    {
+     "question": "Tell me about a time you disagreed with someone you needed, and how it ended.",
+     "answer": "Our staff DBA at Dunav refused to let my berth optimizer touch the scheduling tables. He'd been burned by an automation project before. I sat with him for a week of night shifts to see the failure he feared, then redesigned the writes to be append-only with his sign-off on the merge job. He became the project's loudest advocate, and the optimizer ended up saving about 40000 EUR a year in demurrage fees."
+    },
+    {
+     "question": "And a time something you owned went wrong?",
+     "answer": "Early at Helioscope I shipped a consumer rebalance change without a canary and took ingestion down for three hours during a client demo. I owned it in the postmortem, built the canary stage we still use, and made 'no pipeline change without parallel-read proof' the team rule. We went from 12 incidents a quarter to 3."
+    },
+    {
+     "question": "Why Brightmark Health, out of everywhere you could do this kind of work?",
+     "answer": "Because the downtime actually means something - a missed appointment at a clinic with no IT staff is a patient who doesn't get seen. I've spent years making unreliable pipelines boring, and doing that for scheduling and triage software feels like the same craft pointed at something that matters. I've also read about your text-message intake work; rural patients without smartphones is exactly the kind of constraint I like designing for."
+    },
+    {
+     "question": "What part of that triage work would you most want to own?",
+     "answer": "The intake path. It's the piece where reliability and the domain meet: triage ordering has to be right even when the clinic's connection flaps. I'd want to own it end to end, the way I owned ingestion at Helioscope."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": false,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": [
+       "dashboard latency from 4 hours to 90 seconds"
+      ]
+     }
+    },
+    {
+     "topic": "the streaming pipeline rebuild",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "ran old and new in parallel for two weeks"
+      ]
+     }
+    },
+    {
+     "topic": "the streaming pipeline rebuild",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "a disagreement they had to resolve",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "a failure they owned",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "why this company",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "why this company",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    }
+   ],
+   "questions_asked": 7,
+   "allowed_actions": [
+    "wrap_up"
+   ]
+  },
+  {
+   "name": "early-strength-never-wraps",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "I'm a backend engineer, eight years in. I started at Dunav Logistics automating port operations, and for the last four years I've run data platform work at Helioscope Analytics, where I rebuilt our ingestion pipeline and took dashboard latency from 4 hours to 90 seconds."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": false,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": [
+       "dashboard latency from 4 hours to 90 seconds"
+      ]
+     }
+    }
+   ],
+   "questions_asked": 1,
+   "allowed_actions": [
+    "new_topic",
+    "follow_up"
+   ]
+  },
+  {
+   "name": "an-unexplained-impact-claim-draws-a-follow-up",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "I'm a backend engineer. I started at Dunav Logistics and I've been at Helioscope Analytics on the data platform for four years."
+    },
+    {
+     "question": "Tell me about the berth scheduling work at Dunav.",
+     "answer": "Berth assignments were done by hand in a spreadsheet and ships idled outside the port. I built an optimizer that planned assignments a week ahead. It ended up saving about 40000 EUR a year in demurrage fees."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "the berth scheduling work at Dunav",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "saving about 40000 EUR a year in demurrage fees"
+      ]
+     }
+    }
+   ],
+   "questions_asked": 2,
+   "allowed_actions": [
+    "follow_up"
+   ]
+  },
+  {
+   "name": "a-topic-that-stays-vague-is-moved-past-not-belabored",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "I'm a backend engineer at Helioscope Analytics, before that Dunav Logistics. Mostly data platform work."
+    },
+    {
+     "question": "Tell me about the streaming pipeline work at Helioscope.",
+     "answer": "We modernized the data architecture to enable real-time insights across the organization."
+    },
+    {
+     "question": "What did you do yourself in that modernization?",
+     "answer": "I drove alignment across stakeholders and helped the team deliver a more scalable solution."
+    },
+    {
+     "question": "Walk me through one concrete change you made with your own hands.",
+     "answer": "It was really a team effort to transform how data flowed through the company end to end."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "the streaming pipeline work",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "the streaming pipeline work",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": true,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": []
+     }
+    },
+    {
+     "topic": "the streaming pipeline work",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": []
+     }
+    }
+   ],
+   "questions_asked": 4,
+   "allowed_actions": [
+    "new_topic"
+   ]
+  },
+  {
+   "name": "a-thread-gone-mechanical-gets-a-new-topic",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "Eight years as a backend engineer, the last four running data platform work at Helioscope Analytics. The thread is that I end up owning the systems nobody wants to touch. The biggest one was proposing and leading the streaming rebuild of our ingestion pipeline, which took dashboard latency from 4 hours to 90 seconds and saved a renewal."
+    },
+    {
+     "question": "You said the rebuild saved a renewal. How did you prove the new pipeline could be trusted before cutover?",
+     "answer": "We ran old and new in parallel for two weeks and compared outputs daily. I'd built the original batch system, so I knew which tables would disagree first. When a partition-skew bug showed up I held the cutover a week, showed the renewal team the skew numbers, and we cut over clean once the diffs went quiet."
+    },
+    {
+     "question": "What did that daily comparison actually involve?",
+     "answer": "You rerun the diff job across both outputs and look at the mismatch report."
+    },
+    {
+     "question": "And how did you run the diff job itself?",
+     "answer": "It's just a script. There's a dashboard that shows the mismatch counts."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background and the thread running through their work",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "took dashboard latency from 4 hours to 90 seconds and saved a renewal",
+       "owning the systems nobody wants to touch"
+      ]
+     }
+    },
+    {
+     "topic": "their background and the thread running through their work",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "ran old and new in parallel for two weeks and compared outputs daily",
+       "held the cutover a week"
+      ]
+     }
+    },
+    {
+     "topic": "their background and the thread running through their work",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "rerun the diff job across both outputs"
+      ]
+     }
+    },
+    {
+     "topic": "their background and the thread running through their work",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": false,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "a dashboard that shows the mismatch counts"
+      ]
+     }
+    }
+   ],
+   "questions_asked": 4,
+   "allowed_actions": [
+    "new_topic"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,99 @@
+{
+ "description": "Answers the per-answer assessor must read correctly. Each case is the latest answer on a named topic, in the synthetic candidate's voice. STAR evidence flags and signal sufficiency are exact-match; claim_substrings, when present, must each appear (case-insensitive) somewhere in the claims worth chasing. The five STAR cases carry over from the retired StarFlagger evals; sufficiency and claims are the Phase 4a additions. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "cases": [
+  {
+   "name": "complete-and-quantified",
+   "topic": "the dashboard latency work at Helioscope",
+   "answer": "At Helioscope our ingestion pipeline ran as a nightly batch, so client dashboards were always hours stale. I was asked to get data latency under two minutes before a big renewal. I led the migration to a streaming pipeline on Kafka, rewrote the Python consumers, and ran the old and new paths in parallel for two weeks to prove parity. Data latency dropped from 4 hours to 90 seconds and we kept the client.",
+   "expected": {
+    "situation": true,
+    "task": true,
+    "action": true,
+    "result": true,
+    "quantified_result": true,
+    "sufficient_signal": true
+   }
+  },
+  {
+   "name": "missing-result",
+   "topic": "the berth scheduling work at Dunav Logistics",
+   "answer": "At Dunav Logistics, ships were racking up demurrage fees because berth assignments were done by hand in a spreadsheet. My job was to automate the scheduling. I built a berth-scheduling service in Go that matched vessels to berths by draft and arrival window.",
+   "expected": {
+    "situation": true,
+    "task": true,
+    "action": true,
+    "result": false,
+    "quantified_result": false,
+    "sufficient_signal": false
+   }
+  },
+  {
+   "name": "vague-unquantified-result",
+   "topic": "the berth scheduling work at Dunav Logistics",
+   "answer": "At Dunav Logistics, ships were racking up demurrage fees because berth assignments were done by hand in a spreadsheet. My job was to automate the scheduling. I built a berth-scheduling service in Go. After it shipped, the fees came down a lot and the operations team was much happier.",
+   "expected": {
+    "situation": true,
+    "task": true,
+    "action": true,
+    "result": true,
+    "quantified_result": false,
+    "sufficient_signal": false
+   }
+  },
+  {
+   "name": "action-only",
+   "topic": "the caching work",
+   "answer": "I rewrote the consumers and added a Redis cache in front of the database.",
+   "expected": {
+    "situation": false,
+    "task": false,
+    "action": true,
+    "result": false,
+    "quantified_result": false,
+    "sufficient_signal": false
+   }
+  },
+  {
+   "name": "context-without-action",
+   "topic": "the on-call incident load at Dunav",
+   "answer": "Our tracking platform at Dunav kept paging us at night, and management wanted the incident count brought down before the peak shipping season.",
+   "expected": {
+    "situation": true,
+    "task": true,
+    "action": false,
+    "result": false,
+    "quantified_result": false,
+    "sufficient_signal": false
+   }
+  },
+  {
+   "name": "impact-claim-worth-chasing",
+   "topic": "their background",
+   "answer": "I've spent the last four years at Helioscope on the data platform team. The thing I'm proudest of is cutting our cloud bill by 60 percent in one quarter while the platform kept growing.",
+   "expected": {
+    "situation": true,
+    "task": false,
+    "action": false,
+    "result": true,
+    "quantified_result": true,
+    "sufficient_signal": false
+   },
+   "claim_substrings": [
+    "60 percent"
+   ]
+  },
+  {
+   "name": "broad-topic-one-complete-story-suffices",
+   "topic": "the candidate's background and the thread running through their work",
+   "answer": "The thread is ownership, honestly. The clearest example: at Helioscope our support team hand-triaged every incoming ticket, and renewals were slipping because first responses took hours. I proposed routing tickets with a classifier, got buy-in, and built the service myself over a quarter. It now routes 80 percent of tickets automatically and first response went from six hours to forty minutes.",
+   "expected": {
+    "situation": true,
+    "task": true,
+    "action": true,
+    "result": true,
+    "quantified_result": true,
+    "sufficient_signal": true
+   }
+  }
+ ]
+}

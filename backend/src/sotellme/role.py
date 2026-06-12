@@ -13,6 +13,23 @@ DEFAULT_COMPETENCIES = ("ownership", "impact", "conflict", "failure", "ambiguity
 DEFAULT_WEIGHT = 3
 
 
+_LEVEL_EMPHASIS_LADDER: tuple[tuple[TargetLevel, tuple[str, ...]], ...] = (
+    ("junior", ("problem solving", "delivery", "learning")),
+    ("mid", ("initiative", "trust and conflict")),
+    ("senior", ("strategic leadership", "developing others", "innovation")),
+    ("staff", ()),
+)
+
+
+def level_emphasis(level: TargetLevel) -> tuple[str, ...]:
+    emphasis: tuple[str, ...] = ()
+    for rung, names in _LEVEL_EMPHASIS_LADDER:
+        emphasis += names
+        if rung == level:
+            return emphasis
+    return emphasis
+
+
 class CompetencyWeight(BaseModel):
     name: str = Field(description="The competency or principle the role values.")
     weight: int = Field(

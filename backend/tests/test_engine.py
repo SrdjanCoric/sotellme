@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from sotellme.coverage import Gap, MotivationTopic, StarFlags
-from sotellme.engine import EngineError, InterviewEngine, RoleBuilder, SessionHandle
+from sotellme.assessor import AnswerAssessment, StarFlags
+from sotellme.director import DirectorDecision, DirectorSituation
+from sotellme.engine import Director, EngineError, InterviewEngine, RoleBuilder, SessionHandle
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import CompetencyWeight, RoleContext, TargetLevel
@@ -17,26 +18,39 @@ STUB_PROFILE = CandidateProfile(
     technologies=["Python"],
 )
 
-OPENING_QUESTION = "Tell me a story about ownership."
+OPENING_DECISION = DirectorDecision(
+    action="new_topic", subject="their background", reason="the opener"
+)
+
+FOLLOW_UP_DECISION = DirectorDecision(
+    action="follow_up", subject="the migration claim", reason="impact left unexplained"
+)
+
+WRAP_UP_DECISION = DirectorDecision(action="wrap_up", reason="enough signal")
 
 CLOSING_TURN = "That covers it, thanks for walking me through the migration."
 
-COMPLETE_ANSWER = "situation task action result quantified"
-
 POSTING = "Senior Backend Engineer at Acme. You will own the billing platform."
+
+BRIEF = "Acme builds billing software for veterinary clinics."
 
 
 def stub_parser(cv_text: str) -> CandidateProfile:
     return STUB_PROFILE
 
 
-def keyword_flagger(answer: str) -> StarFlags:
-    return StarFlags(
-        situation="situation" in answer,
-        task="task" in answer,
-        action="action" in answer,
-        result="result" in answer,
-        quantified_result="quantified" in answer,
+def keyword_assessor(topic: str, transcript: Sequence[Turn]) -> AnswerAssessment:
+    answer = transcript[-1].answer
+    return AnswerAssessment(
+        star=StarFlags(
+            situation="situation" in answer,
+            task="task" in answer,
+            action="action" in answer,
+            result="result" in answer,
+            quantified_result="quantified" in answer,
+        ),
+        sufficient_signal="enough" in answer,
+        claims_worth_chasing=[],
     )
 
 
@@ -47,7 +61,6 @@ def acme_context(target_level: TargetLevel | None = "senior") -> RoleContext:
         competencies=[
             CompetencyWeight(name="ownership", weight=5),
             CompetencyWeight(name="conflict", weight=4),
-            CompetencyWeight(name="failure", weight=2),
         ],
         target_level=target_level,
     )
@@ -60,51 +73,63 @@ def builder_returning(context: RoleContext) -> RoleBuilder:
     return build
 
 
+class ScriptedDirector:
+    """Replays scripted decisions; repeats the last one when the script runs out."""
+
+    def __init__(self, decisions: Sequence[DirectorDecision]) -> None:
+        self.decisions = list(decisions)
+        self.situations: list[DirectorSituation] = []
+
+    def decide(self, situation: DirectorSituation) -> DirectorDecision:
+        self.situations.append(situation)
+        index = min(len(self.situations) - 1, len(self.decisions) - 1)
+        return self.decisions[index]
+
+
 class StubInterviewer:
     def __init__(self) -> None:
-        self.probed_gaps: list[tuple[Gap, ...]] = []
-        self.motivation_topics: list[MotivationTopic] = []
+        self.seen_briefs: list[str] = []
+        self.seen_decisions: list[DirectorDecision] = []
 
-    def competency_question(
-        self, profile: CandidateProfile, transcript: Sequence[Turn], competency: str
-    ) -> str:
-        return f"Tell me a story about {competency}."
-
-    def probe_question(
-        self, profile: CandidateProfile, transcript: Sequence[Turn], gaps: tuple[Gap, ...]
-    ) -> str:
-        self.probed_gaps.append(gaps)
-        return f"Follow-up {len(self.probed_gaps)}: tell me more about the {gaps[0]}."
-
-    def motivation_question(
+    def question_for(
         self,
+        decision: DirectorDecision,
+        profile: CandidateProfile,
         context: RoleContext,
-        posting_text: str,
+        brief: str,
         transcript: Sequence[Turn],
-        topic: MotivationTopic,
     ) -> str:
-        self.motivation_topics.append(topic)
-        return f"Why this {topic}?"
+        self.seen_decisions.append(decision)
+        self.seen_briefs.append(brief)
+        return f"Question {len(self.seen_decisions)} about {decision.subject}."
 
     def closing_turn(self, transcript: Sequence[Turn]) -> str:
         return CLOSING_TURN
 
 
+def stub_researcher(posting_text: str, context: RoleContext) -> str:
+    return BRIEF
+
+
 def build_engine(
     data_dir: Path,
-    followup_cap: int = 3,
-    max_competencies: int = 1,
-    role_builder: RoleBuilder | None = None,
+    director: Director | None = None,
     interviewer: StubInterviewer | None = None,
+    role_builder: RoleBuilder | None = None,
+    researcher: object = None,
+    question_cap: int = 20,
+    follow_up_cap: int = 6,
 ) -> InterviewEngine:
     return InterviewEngine(
         data_dir=data_dir,
         profile_parser=stub_parser,
-        star_flagger=keyword_flagger,
+        assessor=keyword_assessor,
+        director=director or ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION]),
         interviewer=interviewer or StubInterviewer(),
         role_builder=role_builder or builder_returning(acme_context()),
-        followup_cap=followup_cap,
-        max_competencies=max_competencies,
+        researcher=researcher or stub_researcher,  # type: ignore[arg-type]
+        question_cap=question_cap,
+        follow_up_cap=follow_up_cap,
     )
 
 
@@ -123,11 +148,11 @@ def start_past_setup(
     return session
 
 
-def test_start_returns_the_first_competency_question(tmp_path: Path) -> None:
+def test_start_poses_the_directors_opening_topic(tmp_path: Path) -> None:
     with build_engine(tmp_path / "data") as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
 
-    assert session.question == OPENING_QUESTION
+    assert session.question == "Question 1 about their background."
     assert session.thread_id
     assert session.profile == STUB_PROFILE
 
@@ -142,7 +167,7 @@ def test_without_a_posting_the_level_is_asked_never_defaulted(tmp_path: Path) ->
         session = engine.submit_level(session.thread_id, "mid")
 
     assert not session.needs_level
-    assert session.question == OPENING_QUESTION
+    assert session.question == "Question 1 about their background."
 
 
 def test_a_deduced_level_skips_the_setup_question(tmp_path: Path) -> None:
@@ -151,7 +176,7 @@ def test_a_deduced_level_skips_the_setup_question(tmp_path: Path) -> None:
         session = engine.start(write_cv(tmp_path), posting_text=POSTING)
 
     assert not session.needs_level
-    assert session.question == OPENING_QUESTION
+    assert session.question == "Question 1 about their background."
 
 
 def test_a_posting_without_a_clear_level_pauses_to_ask(tmp_path: Path) -> None:
@@ -163,7 +188,7 @@ def test_a_posting_without_a_clear_level_pauses_to_ask(tmp_path: Path) -> None:
 
         session = engine.submit_level(session.thread_id, "senior")
 
-    assert session.question == OPENING_QUESTION
+    assert session.question == "Question 1 about their background."
 
 
 def test_the_level_ask_survives_a_restart(tmp_path: Path) -> None:
@@ -176,172 +201,247 @@ def test_the_level_ask_survives_a_restart(tmp_path: Path) -> None:
         assert resumed.needs_level
         session = engine.submit_level(resumed.thread_id, "junior")
 
-    assert session.question == OPENING_QUESTION
+    assert session.question == "Question 1 about their background."
 
 
-def test_a_session_walks_competencies_by_weight_then_motivation(tmp_path: Path) -> None:
-    interviewer = StubInterviewer()
-    builder = builder_returning(acme_context())
-    engine = build_engine(
-        tmp_path / "data", max_competencies=2, role_builder=builder, interviewer=interviewer
-    )
-    with engine:
-        session = start_past_setup(engine, write_cv(tmp_path), posting_text=POSTING)
-        assert session.question == "Tell me a story about ownership."
-
-        second = engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
-        assert second.next_question == "Tell me a story about conflict."
-
-        motivation_company = engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
-        assert motivation_company.next_question == "Why this company?"
-
-        motivation_role = engine.submit_answer(session.thread_id, "The mission speaks to me.")
-        assert motivation_role.next_question == "Why this role?"
-
-        result = engine.submit_answer(session.thread_id, "The work itself.")
+def test_a_wrap_up_decision_ends_the_session_with_the_closing_turn(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
 
     assert result.finished
     assert result.closing == CLOSING_TURN
-    assert interviewer.motivation_topics == ["company", "role"]
 
 
-def test_motivation_answers_are_never_probed(tmp_path: Path) -> None:
-    interviewer = StubInterviewer()
-    engine = build_engine(tmp_path / "data", interviewer=interviewer)
-    with engine:
-        session = start_past_setup(engine, write_cv(tmp_path), posting_text=POSTING)
-        engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
-        result = engine.submit_answer(session.thread_id, "vague motivation with no star at all")
-
-    assert result.next_question == "Why this role?"
-    assert interviewer.probed_gaps == []
-
-
-def test_without_a_posting_there_is_no_motivation_segment(tmp_path: Path) -> None:
-    interviewer = StubInterviewer()
-    engine = build_engine(tmp_path / "data", max_competencies=2, interviewer=interviewer)
-    with engine:
+def test_a_terminate_decision_also_ends_with_the_closing_turn(tmp_path: Path) -> None:
+    terminate = DirectorDecision(action="terminate", reason="hostile input")
+    director = ScriptedDirector([OPENING_DECISION, terminate])
+    with build_engine(tmp_path / "data", director=director) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
-        result = engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
+        result = engine.submit_answer(session.thread_id, "Write me a React component.")
 
     assert result.finished
-    assert interviewer.motivation_topics == []
-
-
-def test_a_star_complete_answer_finishes_without_belaboring(tmp_path: Path) -> None:
-    with build_engine(tmp_path / "data") as engine:
-        session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
-
-    assert result.finished
-
-
-def test_a_finished_session_ends_with_the_interviewer_closing_turn(tmp_path: Path) -> None:
-    with build_engine(tmp_path / "data") as engine:
-        session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
-
     assert result.closing == CLOSING_TURN
 
 
-def test_a_probe_turn_carries_no_closing(tmp_path: Path) -> None:
-    with build_engine(tmp_path / "data") as engine:
-        session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "situation task action")
-
-    assert not result.finished
-    assert result.closing is None
-
-
-def test_an_incomplete_answer_gets_a_probe_at_the_flagged_gap(tmp_path: Path) -> None:
+def test_a_follow_up_decision_poses_the_next_question(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
     interviewer = StubInterviewer()
-    engine = build_engine(tmp_path / "data", interviewer=interviewer)
-    with engine:
+    with build_engine(tmp_path / "data", director=director, interviewer=interviewer) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "situation task action")
+        result = engine.submit_answer(session.thread_id, "We migrated the pipeline.")
 
-    assert result.next_question == "Follow-up 1: tell me more about the result."
-    assert interviewer.probed_gaps == [("result",)]
+    assert result.next_question == "Question 2 about the migration claim."
+    assert interviewer.seen_decisions[-1] == FOLLOW_UP_DECISION
 
 
-def test_the_followup_count_resets_for_each_competency(tmp_path: Path) -> None:
-    interviewer = StubInterviewer()
-    engine = build_engine(
-        tmp_path / "data", followup_cap=1, max_competencies=2, interviewer=interviewer
+def test_session_length_follows_the_directors_judgment(tmp_path: Path) -> None:
+    short = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "short", director=short) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "Strong answer.")
+        assert result.finished
+
+    longer = ScriptedDirector(
+        [OPENING_DECISION, FOLLOW_UP_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION]
     )
-    with engine:
+    with build_engine(tmp_path / "longer", director=longer) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        probe = engine.submit_answer(session.thread_id, "situation")
-        assert probe.next_question == "Follow-up 1: tell me more about the task."
-
-        advance = engine.submit_answer(session.thread_id, "situation")
-        assert advance.next_question == "Tell me a story about impact."
-
-        probe_again = engine.submit_answer(session.thread_id, "situation")
-
-    assert probe_again.next_question == "Follow-up 2: tell me more about the task."
-
-
-def run_scripted_session(engine: InterviewEngine, cv: Path, answers: list[str]) -> int:
-    session = start_past_setup(engine, cv)
-    questions_asked = 1
-    for answer in answers:
-        result = engine.submit_answer(session.thread_id, answer)
-        if result.finished:
-            return questions_asked
-        questions_asked += 1
-    raise AssertionError("the scripted session never finished")
-
-
-def test_a_weak_transcript_draws_more_questions_than_a_strong_one(tmp_path: Path) -> None:
-    with build_engine(tmp_path / "strong") as engine:
-        strong_count = run_scripted_session(engine, write_cv(tmp_path), [COMPLETE_ANSWER])
-
-    weak_answers = ["situation", "situation task", "situation task action", COMPLETE_ANSWER]
-    with build_engine(tmp_path / "weak") as engine:
-        weak_count = run_scripted_session(engine, write_cv(tmp_path), weak_answers)
-
-    assert strong_count == 1
-    assert weak_count == 4
-
-
-def test_followups_are_bounded_by_the_cap(tmp_path: Path) -> None:
-    evasive_answers = ["situation"] * 10
-    with build_engine(tmp_path / "data", followup_cap=3) as engine:
-        count = run_scripted_session(engine, write_cv(tmp_path), evasive_answers)
-
-    assert count == 1 + 3
-
-
-def test_an_evasive_full_session_still_terminates(tmp_path: Path) -> None:
-    evasive_answers = ["situation"] * 30
-    engine = build_engine(tmp_path / "data", followup_cap=3, max_competencies=3)
-    with engine:
-        session = start_past_setup(engine, write_cv(tmp_path), posting_text=POSTING)
         questions = 1
-        for answer in evasive_answers:
-            result = engine.submit_answer(session.thread_id, answer)
-            if result.finished:
-                break
+        result = engine.submit_answer(session.thread_id, "Vague answer.")
+        while not result.finished:
             questions += 1
-        else:
-            raise AssertionError("the evasive session never finished")
+            result = engine.submit_answer(session.thread_id, "Vague answer.")
 
-    assert questions == 3 * (1 + 3) + 2
+    assert questions == 3
 
 
-def test_pause_mid_competency_resumes_from_the_same_probe(tmp_path: Path) -> None:
-    data_dir = tmp_path / "data"
-    with build_engine(data_dir) as engine:
+def test_a_director_that_never_stops_is_bounded_by_the_question_cap(tmp_path: Path) -> None:
+    relentless = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION])
+    with build_engine(tmp_path / "data", director=relentless, question_cap=5) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        probe = engine.submit_answer(session.thread_id, "situation task action")
+        questions = 1
+        result = engine.submit_answer(session.thread_id, "Evasive.")
+        while not result.finished:
+            questions += 1
+            result = engine.submit_answer(session.thread_id, "Evasive.")
 
-    with build_engine(data_dir) as engine:
+    assert questions == 5
+    assert result.closing == CLOSING_TURN
+
+
+class ExhaustionAwareDirector:
+    """Follows up forever until told the thread is exhausted, then opens one new topic."""
+
+    def __init__(self) -> None:
+        self.situations: list[DirectorSituation] = []
+        self.opened_after_exhaustion = False
+
+    def decide(self, situation: DirectorSituation) -> DirectorDecision:
+        self.situations.append(situation)
+        if len(self.situations) == 1:
+            return OPENING_DECISION
+        if situation.follow_ups_exhausted:
+            self.opened_after_exhaustion = True
+            return DirectorDecision(
+                action="new_topic", subject="the outage story", reason="thread exhausted"
+            )
+        if self.opened_after_exhaustion:
+            return WRAP_UP_DECISION
+        return FOLLOW_UP_DECISION
+
+
+def test_a_director_that_never_leaves_a_topic_is_forced_to_wrap(tmp_path: Path) -> None:
+    relentless = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION])
+    with build_engine(tmp_path / "data", director=relentless, follow_up_cap=2) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        questions = 1
+        result = engine.submit_answer(session.thread_id, "Evasive.")
+        while not result.finished:
+            questions += 1
+            result = engine.submit_answer(session.thread_id, "Evasive.")
+
+    assert questions == 3
+    assert result.closing == CLOSING_TURN
+    assert relentless.situations[-1].follow_ups_exhausted
+    assert not relentless.situations[-2].follow_ups_exhausted
+
+
+def test_an_exhausted_thread_lets_the_director_open_a_new_topic(tmp_path: Path) -> None:
+    director = ExhaustionAwareDirector()
+    with build_engine(tmp_path / "data", director=director, follow_up_cap=1) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "Background answer.")
+        result = engine.submit_answer(session.thread_id, "Follow-up answer.")
+
+        assert result.next_question == "Question 3 about the outage story."
+
+        engine.submit_answer(session.thread_id, "Outage answer.")
+        state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
+
+    topics = [entry.topic for entry in state.values["assessments"]]
+    assert topics == ["their background", "their background", "the outage story"]
+
+
+def test_the_director_sees_the_consecutive_follow_up_count(tmp_path: Path) -> None:
+    director = ScriptedDirector(
+        [OPENING_DECISION, FOLLOW_UP_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION]
+    )
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "First answer.")
+        engine.submit_answer(session.thread_id, "Second answer.")
+        engine.submit_answer(session.thread_id, "Third answer.")
+
+    assert [s.consecutive_follow_ups for s in director.situations] == [0, 0, 1, 2]
+    assert all(s.follow_up_cap == 6 for s in director.situations)
+
+
+def test_the_director_sees_assessments_with_their_topics(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "situation task action, still vague")
+        engine.submit_answer(session.thread_id, "enough now")
+
+    final_situation = director.situations[-1]
+    assert [entry.topic for entry in final_situation.assessments] == [
+        "their background",
+        "their background",
+    ]
+    assert [entry.assessment.sufficient_signal for entry in final_situation.assessments] == [
+        False,
+        True,
+    ]
+    assert final_situation.questions_asked == 2
+
+
+def test_a_follow_up_keeps_the_current_topic_for_the_assessor(tmp_path: Path) -> None:
+    new_topic = DirectorDecision(action="new_topic", subject="the outage story", reason="next")
+    director = ScriptedDirector([OPENING_DECISION, new_topic, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "Background answer.")
+        engine.submit_answer(session.thread_id, "Outage answer.")
+        engine.submit_answer(session.thread_id, "Follow-up answer.")
+
+        state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
+
+    topics = [entry.topic for entry in state.values["assessments"]]
+    assert topics == ["their background", "the outage story", "the outage story"]
+
+
+def test_with_a_posting_the_company_brief_reaches_director_and_interviewer(
+    tmp_path: Path,
+) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    interviewer = StubInterviewer()
+    with build_engine(tmp_path / "data", director=director, interviewer=interviewer) as engine:
+        start_past_setup(engine, write_cv(tmp_path), posting_text=POSTING)
+
+    assert director.situations[0].brief == BRIEF
+    assert interviewer.seen_briefs == [BRIEF]
+
+
+def test_without_a_posting_there_is_no_research_and_no_brief(tmp_path: Path) -> None:
+    def exploding_researcher(posting_text: str, context: RoleContext) -> str:
+        raise AssertionError("research must not run without a posting")
+
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    engine = build_engine(tmp_path / "data", director=director, researcher=exploding_researcher)
+    with engine:
+        start_past_setup(engine, write_cv(tmp_path))
+
+    assert director.situations[0].brief == ""
+
+
+def test_a_failed_research_step_never_kills_the_session(tmp_path: Path) -> None:
+    def failing_researcher(posting_text: str, context: RoleContext) -> str:
+        raise RuntimeError("network down")
+
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    engine = build_engine(tmp_path / "data", director=director, researcher=failing_researcher)
+    with engine:
+        session = start_past_setup(engine, write_cv(tmp_path), posting_text=POSTING)
+
+    assert session.question == "Question 1 about their background."
+    assert director.situations[0].brief == ""
+
+
+def test_the_submitted_level_drives_the_directors_emphasis(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    builder = builder_returning(acme_context(target_level=None))
+    with build_engine(tmp_path / "data", director=director, role_builder=builder) as engine:
+        session = engine.start(write_cv(tmp_path), posting_text=POSTING)
+        engine.submit_level(session.thread_id, "senior")
+
+    assert "strategic leadership" in director.situations[0].emphasis
+    assert "problem solving" in director.situations[0].emphasis
+
+
+def test_a_junior_level_gets_the_smaller_emphasis(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = engine.start(write_cv(tmp_path))
+        engine.submit_level(session.thread_id, "junior")
+
+    assert director.situations[0].emphasis == ("problem solving", "delivery", "learning")
+
+
+def test_pause_mid_session_resumes_from_the_same_question(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(data_dir, director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        probe = engine.submit_answer(session.thread_id, "We migrated the pipeline.")
+
+    resumed_director = ScriptedDirector([WRAP_UP_DECISION])
+    with build_engine(data_dir, director=resumed_director) as engine:
         resumed = engine.resume_latest()
         assert resumed.thread_id == session.thread_id
         assert resumed.question == probe.next_question
-        result = engine.submit_answer(resumed.thread_id, COMPLETE_ANSWER)
+        result = engine.submit_answer(resumed.thread_id, "The full story, enough now.")
 
     assert result.finished
 
@@ -350,14 +450,16 @@ def test_checkpoint_roundtrip_deserializes_only_registered_types(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     data_dir = tmp_path / "data"
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
     with caplog.at_level(logging.WARNING):
-        with build_engine(data_dir) as engine:
+        with build_engine(data_dir, director=director) as engine:
             session = start_past_setup(engine, write_cv(tmp_path), posting_text=POSTING)
             engine.submit_answer(session.thread_id, "situation task")
 
-        with build_engine(data_dir) as engine:
+        resumed_director = ScriptedDirector([WRAP_UP_DECISION])
+        with build_engine(data_dir, director=resumed_director) as engine:
             resumed = engine.resume_latest()
-            engine.submit_answer(resumed.thread_id, COMPLETE_ANSWER)
+            engine.submit_answer(resumed.thread_id, "enough now")
 
     assert "unregistered type" not in caplog.text
 
@@ -373,9 +475,11 @@ def test_profile_survives_resume_without_reparsing(tmp_path: Path) -> None:
     engine = InterviewEngine(
         data_dir=data_dir,
         profile_parser=failing_parser,
-        star_flagger=keyword_flagger,
+        assessor=keyword_assessor,
+        director=ScriptedDirector([WRAP_UP_DECISION]),
         interviewer=StubInterviewer(),
         role_builder=builder_returning(acme_context()),
+        researcher=stub_researcher,
     )
     with engine:
         resumed = engine.resume_latest()
@@ -394,7 +498,7 @@ def test_resume_with_no_session_is_a_clear_error(tmp_path: Path) -> None:
 def test_resume_after_finished_session_is_a_clear_error(tmp_path: Path) -> None:
     with build_engine(tmp_path / "data") as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        engine.submit_answer(session.thread_id, COMPLETE_ANSWER)
+        engine.submit_answer(session.thread_id, "Strong answer.")
 
         with pytest.raises(EngineError, match="already finished"):
             engine.resume_latest()

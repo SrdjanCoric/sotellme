@@ -7,22 +7,27 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
+from sotellme.assessor import AssessorError, assess_answer
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
+from sotellme.director import DirectorError, LLMDirector
 from sotellme.engine import (
+    Assessor,
+    Director,
     EngineError,
     InterviewEngine,
     Interviewer,
     ProfileParser,
+    Researcher,
     RoleBuilder,
     SessionHandle,
-    StarFlagger,
 )
 from sotellme.extraction import CVInputError
-from sotellme.flagger import StarFlaggerError, flag_star_elements
+from sotellme.fetch import fetch_research_page
 from sotellme.interviewer import LLMInterviewer
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import ProfileParseError, parse_candidate_profile
-from sotellme.role import RoleContextError, TargetLevel, build_role_context
+from sotellme.research import build_company_brief
+from sotellme.role import RoleContext, RoleContextError, TargetLevel, build_role_context
 from sotellme.tracing import TracingError, langfuse_callbacks
 
 CLOSING_MESSAGE = "That's a wrap. Grading and coaching arrive in a coming release."
@@ -96,9 +101,13 @@ def _build_profile_parser(config: ModelConfig) -> ProfileParser:
     return lambda cv_text: parse_candidate_profile(cv_text, model)
 
 
-def _build_star_flagger(config: ModelConfig) -> StarFlagger:
+def _build_assessor(config: ModelConfig) -> Assessor:
     model = build_chat_model(config, "fast")
-    return lambda answer: flag_star_elements(answer, model)
+    return lambda topic, transcript: assess_answer(topic, transcript, model)
+
+
+def _build_director(config: ModelConfig) -> Director:
+    return LLMDirector(build_chat_model(config, "fast"))
 
 
 def _build_interviewer(config: ModelConfig) -> Interviewer:
@@ -108,6 +117,15 @@ def _build_interviewer(config: ModelConfig) -> Interviewer:
 def _build_role_builder(config: ModelConfig) -> RoleBuilder:
     model = build_chat_model(config, "fast")
     return lambda posting_text: build_role_context(posting_text, model)
+
+
+def _build_researcher(config: ModelConfig) -> Researcher:
+    model = build_chat_model(config, "fast")
+
+    def research(posting_text: str, context: RoleContext) -> str:
+        return build_company_brief(posting_text, context, model, fetch_research_page)
+
+    return research
 
 
 def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
@@ -147,14 +165,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         engine = InterviewEngine(
             data_dir=_data_dir(),
             profile_parser=_build_profile_parser(config),
-            star_flagger=_build_star_flagger(config),
+            assessor=_build_assessor(config),
+            director=_build_director(config),
             interviewer=_build_interviewer(config),
             role_builder=_build_role_builder(config),
+            researcher=_build_researcher(config),
             callbacks=callbacks,
         )
         with engine:
             if args.command == "interview":
-                with console.status("Reading your CV and the posting..."):
+                status = (
+                    "Reading your CV and researching the company..."
+                    if posting_text
+                    else "Reading your CV..."
+                )
+                with console.status(status):
                     session = engine.start(Path(args.cv), posting_text=posting_text)
             else:
                 session = engine.resume_latest()
@@ -165,7 +190,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         PostingInputError,
         ProfileParseError,
         RoleContextError,
-        StarFlaggerError,
+        AssessorError,
+        DirectorError,
         EngineError,
         TracingError,
     ) as exc:
