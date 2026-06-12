@@ -12,7 +12,7 @@ from sotellme.profile import CandidateProfile, parse_candidate_profile
 CASES_FILE = Path(__file__).parent.parent / "evals" / "profile_parser_cases.json"
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-EVAL_PROVIDER = os.environ.get("SOTELLME_PROVIDER", "anthropic")
+EVAL_PROVIDER = os.environ.get("SOTELLME_PROVIDER", "google_genai")
 
 needs_provider_key = pytest.mark.skipif(
     not os.environ.get(PROVIDER_KEY_VARS.get(EVAL_PROVIDER, ""), ""),

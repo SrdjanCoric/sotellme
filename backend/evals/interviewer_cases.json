@@ -33,6 +33,7 @@
     "technologies": ["Python", "Go", "Kafka", "Redis", "PostgreSQL"]
   },
   "opening": {
+    "competency": "impact",
     "claim_substrings": [
       "helioscope",
       "dunav",
@@ -71,6 +72,24 @@
     ],
     "gaps": ["result"]
   },
+  "motivation": {
+    "role_context": {
+      "company": "Brightmark Health",
+      "role_title": "Senior Backend Engineer",
+      "competencies": [{ "name": "ownership", "weight": 5 }],
+      "framework": null,
+      "target_level": null
+    },
+    "posting": "Senior Backend Engineer - Brightmark Health\n\nBrightmark Health builds appointment and triage software for rural clinics. Our backend team keeps patient-facing scheduling reliable for practices that have no IT staff of their own. You will own services end to end, work closely with clinicians, and ship carefully: downtime here means missed appointments for real patients.",
+    "topic": "company",
+    "transcript": [
+      {
+        "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+        "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+      }
+    ],
+    "company_substring": "brightmark"
+  },
   "closing": {
     "transcript": [
       {
@@ -90,6 +109,16 @@
         {
           "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
           "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+        }
+      ],
+      "gaps": ["result"]
+    },
+    {
+      "name": "probe-missing-result-berth-optimizer",
+      "transcript": [
+        {
+          "question": "Tell me about the berth scheduling work at Dunav Logistics.",
+          "answer": "Ships kept idling outside the port because berth assignments were planned by hand on a spreadsheet, so I built an optimizer that planned the assignments a week ahead and worked with the operations team until they trusted its plans."
         }
       ],
       "gaps": ["result"]

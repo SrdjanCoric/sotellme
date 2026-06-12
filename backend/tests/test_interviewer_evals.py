@@ -9,18 +9,26 @@ from pydantic import BaseModel, Field
 from voice import voice_tells
 
 from sotellme.config import PROVIDER_KEY_VARS, build_chat_model, resolve_model_config
-from sotellme.coverage import Gap
+from sotellme.coverage import Gap, MotivationTopic
 from sotellme.interviewer import LLMInterviewer, Turn, render_transcript
 from sotellme.profile import CandidateProfile
-from sotellme.prompts import GAP_GUIDANCE, STYLE_EXAMPLES
+from sotellme.prompts import CLOSING_EXAMPLES, GAP_GUIDANCE, MOTIVATION_EXAMPLES, STYLE_EXAMPLES
+from sotellme.role import RoleContext
 
 CASES_FILE = Path(__file__).parent.parent / "evals" / "interviewer_cases.json"
 
-EVAL_PROVIDER = os.environ.get("SOTELLME_PROVIDER", "anthropic")
+EVAL_PROVIDER = os.environ.get("SOTELLME_PROVIDER", "google_genai")
+JUDGE_PROVIDER = os.environ.get("SOTELLME_EVAL_JUDGE_PROVIDER", "anthropic")
+JUDGE_MODEL = os.environ.get("SOTELLME_EVAL_JUDGE_MODEL") or None
+
+
+def _missing_key(provider: str) -> bool:
+    return not os.environ.get(PROVIDER_KEY_VARS.get(provider, ""), "")
+
 
 needs_provider_key = pytest.mark.skipif(
-    not os.environ.get(PROVIDER_KEY_VARS.get(EVAL_PROVIDER, ""), ""),
-    reason=f"interviewer evals need a real {EVAL_PROVIDER} key",
+    _missing_key(EVAL_PROVIDER) or _missing_key(JUDGE_PROVIDER),
+    reason=f"interviewer evals need real {EVAL_PROVIDER} and {JUDGE_PROVIDER} keys",
 )
 
 
@@ -65,7 +73,7 @@ JUDGE_HUMAN_TEMPLATE = (
 
 
 def judge_question(question: str, transcript_text: str, gap_guidance: str) -> JudgeVerdict:
-    config = resolve_model_config(env=os.environ, provider=EVAL_PROVIDER)
+    config = resolve_model_config(env=os.environ, provider=JUDGE_PROVIDER, smart_model=JUDGE_MODEL)
     judge = build_chat_model(config, "smart").with_structured_output(JudgeVerdict)
     verdict = judge.invoke(
         [
@@ -92,7 +100,7 @@ def build_interviewer() -> LLMInterviewer:
 def style_example_fingerprints() -> list[str]:
     fragments = [
         fragment.strip(" .,?").lower()
-        for example in STYLE_EXAMPLES
+        for example in STYLE_EXAMPLES + MOTIVATION_EXAMPLES + CLOSING_EXAMPLES
         for fragment in re.split(r"\[[^\]]*\]", example)
     ]
     return [fragment for fragment in fragments if len(fragment.split()) >= 6]
@@ -124,8 +132,9 @@ def assert_no_style_example_leakage(question: str) -> None:
 def test_the_opening_question_references_a_real_cv_claim() -> None:
     document = load_document()
     profile = CandidateProfile.model_validate(document["profile"])
+    competency: str = document["opening"]["competency"]
 
-    question = build_interviewer().opening_question(profile)
+    question = build_interviewer().competency_question(profile, [], competency)
 
     substrings: list[str] = document["opening"]["claim_substrings"]
     assert any(claim in question.lower() for claim in substrings), (
@@ -161,12 +170,31 @@ def test_a_minimal_profile_draws_no_content_from_the_style_examples() -> None:
     gaps = cast(tuple[Gap, ...], tuple(leakage["gaps"]))
     interviewer = build_interviewer()
 
-    opening = interviewer.opening_question(profile)
+    opening = interviewer.competency_question(profile, [], "ownership")
     probe = interviewer.probe_question(profile, transcript, gaps)
 
     for question in (opening, probe):
         assert_clean_voice(question)
         assert_no_style_example_leakage(question)
+
+
+@needs_provider_key
+def test_the_motivation_question_is_grounded_in_the_posting() -> None:
+    document = load_document()
+    motivation = document["motivation"]
+    context = RoleContext.model_validate(motivation["role_context"])
+    transcript = [Turn.model_validate(turn) for turn in motivation["transcript"]]
+    topic = cast(MotivationTopic, motivation["topic"])
+
+    question = build_interviewer().motivation_question(
+        context, motivation["posting"], transcript, topic
+    )
+
+    assert motivation["company_substring"] in question.lower(), (
+        f"motivation question never names the company: {question!r}"
+    )
+    assert_clean_voice(question)
+    assert_no_style_example_leakage(question)
 
 
 @needs_provider_key
