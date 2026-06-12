@@ -1,5 +1,4 @@
-# Knowledge base — licensed course material, runtime-only config (never committed).
-# Root-anchored so the synthetic fixture KBs under backend/tests/fixtures/ stay committed.
+# Knowledge base — licensed course material, prompt-distillation source (never committed).
 /how-to-answer/
 /how-to-interview/
 
@@ -26,9 +25,6 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-
-# Node
-node_modules/
 dist/
 
 # Local data (real CVs, session artifacts — PII, never committed)
@@ -36,4 +32,3 @@ data/
 
 # OS / editor
 .DS_Store
-.claude/settings.local.json

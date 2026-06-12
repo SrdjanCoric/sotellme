@@ -1,57 +1,39 @@
 # sotellme
 
-A voice-based behavioral interview simulator and coach. You upload a CV and point it at a job
-posting; it researches the company, runs an adaptive mock interview grounded in your actual
-experience, then grades each answer against a STAR rubric and produces specific coaching feedback
-with drills for weak competencies.
+A mock behavioral interviewer that runs in your terminal. You hand it your CV and a job
+posting; it runs an adaptive interview grounded in your actual experience, grades every answer
+against a STAR rubric, and writes a coaching report with fixes and drills for the
+competencies where you were weak.
 
-The interview adapts per answer: vague or unquantified answers get follow-up probes, complete
-stories advance to the next competency, and follow-ups are capped per story. Question routing is
-decided by a pure, LLM-free function (`nextAction(state) -> Probe | NextCompetency | Stop`), so
-the adaptive behavior is unit-tested rather than prompted. The core is text-in/text-out; the
-voice layer (streaming STT/TTS with barge-in) is a swappable adapter on top.
-
-## Architecture
-
-- `backend/` — Python. The engine is a callable library orchestrated with LangGraph (checkpointed
-  state, `interrupt()` at human turns), served through FastAPI. Pydantic models at every boundary.
-- `frontend/` — React (Vite, TypeScript, Tailwind, TanStack Query).
-- Observability and evals run on self-hosted Langfuse. Deterministic modules (coverage logic,
-  guardrails, validation) are tested with pytest; LLM-judgment modules are evaluated with
-  LLM-as-judge datasets, including a comparison against single-prompt and fixed-question-list
-  baselines. Eval results are published in `evals/RESULTS.md` once the harness phase lands.
-
-## Knowledge base
-
-The agents are grounded in two local folders that are not part of the repo:
-
-- `how-to-interview/` — read by the interviewer and orchestrator
-- `how-to-answer/` — read by the grader and coach
-
-The folder split is a firewall: the interviewer has no read path to the grading rubric. Tests run
-against small fixture knowledge bases committed under `tests/fixtures/`, so the suite and CI work
-without the real content. Running real sessions requires supplying your own two folders. CVs are
-handled the same way: tests use a synthetic fixture CV, and no real personal data is committed.
-
-## Development
-
-Requires Python 3.12+ (managed with `uv`) and Node 20+.
-
-```sh
-# backend
-cd backend
-uv sync
-uv run pytest
-
-# frontend
-cd frontend
-npm install
-npm run dev
-```
-
-Copy `.env.example` to `.env` for API keys and Langfuse credentials; secrets are read only from
-the environment and never enter prompts.
+A vague or unquantified story gets a follow-up probe, a
+complete one advances to the next competency, and follow-ups are capped so a single story
+can't eat the session. The routing decision is made by a pure, LLM-free function
+(`next_action(state) -> Probe | NextCompetency | Stop`), so the adaptive behavior is
+unit-tested rather than prompted.
 
 ## Status
 
-Early development.
+Nothing is installable yet; the engine is being built phase by phase. When it ships, the
+install will be `uvx sotellme` from PyPI.
+
+## Bring your own key
+
+There's no account and no server. You choose an LLM provider, set your API key in an
+environment variable, and the tool calls that provider directly. Transcripts, scores, and
+reports stay on your machine; data leaves it only as API calls to the provider you picked. Model selection has two internal slots, a fast one for interviewing and a smart
+one for grading and coaching, filled with recommended defaults per provider and individually
+overridable.
+
+## Development
+
+Requires Python 3.12+, managed with `uv`:
+
+```sh
+cd backend
+uv sync
+uv run ruff check . && uv run mypy --strict src tests && uv run pytest
+```
+
+Secrets are read only from the environment and never enter prompts; the test asserting this
+lands with the engine skeleton. Langfuse tracing is a dev-time option that activates only
+when its env vars are set.
