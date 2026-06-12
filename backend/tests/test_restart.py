@@ -8,30 +8,54 @@ from pathlib import Path
 
 from sotellme.cli import CLOSING_MESSAGE
 
-STUB_PARSER_DRIVER = """\
+STUB_AGENTS_DRIVER = """\
 import sys
 
 import sotellme.cli as cli
+from sotellme.coverage import StarFlags
 from sotellme.profile import CandidateProfile, Role
 
 
-def stub_parser(cv_text: str) -> CandidateProfile:
+def stub_parser(cv_text):
     return CandidateProfile(
-        roles=[Role(title="Senior Engineer", organization="Acme")],
+        roles=[Role(title="Engineer", organization="Acme")],
         projects=[],
         quantified_claims=[],
         technologies=[],
     )
 
 
+def keyword_flagger(answer):
+    return StarFlags(
+        situation="situation" in answer,
+        task="task" in answer,
+        action="action" in answer,
+        result="result" in answer,
+        quantified_result="quantified" in answer,
+    )
+
+
+class StubInterviewer:
+    def opening_question(self, profile):
+        return "Tell me about the Acme migration you led."
+
+    def probe_question(self, profile, transcript, gaps):
+        return f"Follow-up: what about the {gaps[0]}?"
+
+    def closing_turn(self, transcript):
+        return "That covers the migration, thanks for walking me through it."
+
+
 cli._build_profile_parser = lambda config: stub_parser
+cli._build_star_flagger = lambda config: keyword_flagger
+cli._build_interviewer = lambda config: StubInterviewer()
 sys.exit(cli.main(sys.argv[1:]))
 """
 
 
 def _write_driver(tmp_path: Path) -> Path:
     driver = tmp_path / "driver.py"
-    driver.write_text(STUB_PARSER_DRIVER)
+    driver.write_text(STUB_AGENTS_DRIVER)
     return driver
 
 
@@ -77,15 +101,20 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
         proc.wait()
     assert proc.returncode == -signal.SIGKILL
 
+    weak_then_complete = (
+        "I handled the situation and the task.\n\nsituation task action result quantified\n\n"
+    )
     resumed = subprocess.run(
         [sys.executable, str(driver), "resume"],
         env=env,
-        input="I led the Acme migration.\n\n",
+        input=weak_then_complete,
         capture_output=True,
         text=True,
         timeout=60,
     )
 
     assert resumed.returncode == 0, resumed.stdout + resumed.stderr
-    assert "recent project" in resumed.stdout
+    assert "Acme migration" in resumed.stdout
+    assert "what about the action" in resumed.stdout
+    assert "thanks for walking me through it" in resumed.stdout
     assert CLOSING_MESSAGE in resumed.stdout

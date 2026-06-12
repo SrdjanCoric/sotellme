@@ -1,12 +1,6 @@
-from typing import Any
-
 import pytest
-from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.language_models import BaseChatModel, LanguageModelInput
-from langchain_core.messages import BaseMessage
-from langchain_core.outputs import ChatResult
-from langchain_core.runnables import Runnable, RunnableLambda
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
+from stubs import StubChatModel
 
 from sotellme.profile import (
     CandidateProfile,
@@ -22,39 +16,6 @@ SAMPLE_PROFILE = CandidateProfile(
     quantified_claims=["Cut latency by 38%"],
     technologies=["Python"],
 )
-
-
-class StubChatModel(BaseChatModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    structured_response: Any = None
-    structured_error: Exception | None = None
-    seen_inputs: list[Any] = Field(default_factory=list)
-
-    @property
-    def _llm_type(self) -> str:
-        return "stub"
-
-    def _generate(
-        self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-        run_manager: CallbackManagerForLLMRun | None = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        raise NotImplementedError("the stub only supports structured output")
-
-    def with_structured_output(
-        self, schema: dict[str, Any] | type, *, include_raw: bool = False, **kwargs: Any
-    ) -> Runnable[LanguageModelInput, dict[str, Any] | BaseModel]:
-        def run(value: LanguageModelInput) -> dict[str, Any] | BaseModel:
-            self.seen_inputs.append(value)
-            if self.structured_error is not None:
-                raise self.structured_error
-            result: dict[str, Any] | BaseModel = self.structured_response
-            return result
-
-        return RunnableLambda(run)
 
 
 def test_profile_with_a_role_validates() -> None:

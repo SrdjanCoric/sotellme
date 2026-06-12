@@ -8,12 +8,21 @@ from rich.console import Console
 from rich.panel import Panel
 
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
-from sotellme.engine import EngineError, InterviewEngine, ProfileParser, SessionHandle
+from sotellme.engine import (
+    EngineError,
+    InterviewEngine,
+    Interviewer,
+    ProfileParser,
+    SessionHandle,
+    StarFlagger,
+)
 from sotellme.extraction import CVInputError
+from sotellme.flagger import StarFlaggerError, flag_star_elements
+from sotellme.interviewer import LLMInterviewer
 from sotellme.profile import ProfileParseError, parse_candidate_profile
 from sotellme.tracing import TracingError, langfuse_callbacks
 
-CLOSING_MESSAGE = "That's a wrap for the walking skeleton. Grading and coaching arrive soon."
+CLOSING_MESSAGE = "That's a wrap. Grading and coaching arrive in a coming release."
 
 
 def read_multiline_answer(read_line: Callable[[], str]) -> str:
@@ -60,13 +69,29 @@ def _build_profile_parser(config: ModelConfig) -> ProfileParser:
     return lambda cv_text: parse_candidate_profile(cv_text, model)
 
 
-def _run_question_turn(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
-    console.print(Panel(session.question, title="Interviewer", border_style="cyan"))
-    console.print("[dim]Answer below. End with a blank line or /done.[/dim]")
-    answer = read_multiline_answer(input)
-    with console.status("Wrapping up..."):
-        engine.submit_answer(session.thread_id, answer)
-    console.print(f"\n[green]{CLOSING_MESSAGE}[/green]")
+def _build_star_flagger(config: ModelConfig) -> StarFlagger:
+    model = build_chat_model(config, "fast")
+    return lambda answer: flag_star_elements(answer, model)
+
+
+def _build_interviewer(config: ModelConfig) -> Interviewer:
+    return LLMInterviewer(build_chat_model(config, "fast"))
+
+
+def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
+    question: str | None = session.question
+    closing: str | None = None
+    while question is not None:
+        console.print(Panel(question, title="Interviewer", border_style="cyan"))
+        console.print("[dim]Answer below. End with a blank line or /done.[/dim]")
+        answer = read_multiline_answer(input)
+        with console.status("Thinking..."):
+            result = engine.submit_answer(session.thread_id, answer)
+        question = result.next_question
+        closing = result.closing
+    if closing:
+        console.print(Panel(closing, title="Interviewer", border_style="cyan"))
+    console.print(f"\n[dim]{CLOSING_MESSAGE}[/dim]")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -83,6 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         engine = InterviewEngine(
             data_dir=_data_dir(),
             profile_parser=_build_profile_parser(config),
+            star_flagger=_build_star_flagger(config),
+            interviewer=_build_interviewer(config),
             callbacks=callbacks,
         )
         with engine:
@@ -91,8 +118,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     session = engine.start(Path(args.cv))
             else:
                 session = engine.resume_latest()
-            _run_question_turn(console, engine, session)
-    except (ModelConfigError, CVInputError, ProfileParseError, EngineError, TracingError) as exc:
+            _run_session(console, engine, session)
+    except (
+        ModelConfigError,
+        CVInputError,
+        ProfileParseError,
+        StarFlaggerError,
+        EngineError,
+        TracingError,
+    ) as exc:
         console.print(f"[red]{exc}[/red]")
         return 1
     return 0
