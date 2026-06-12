@@ -12,6 +12,7 @@ plans
 # Secrets & environment
 .env
 .env.*
+!.env.example
 *.local
 
 # Langfuse (self-hosted) data

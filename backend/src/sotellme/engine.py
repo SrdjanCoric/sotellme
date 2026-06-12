@@ -1,5 +1,6 @@
 import sqlite3
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 from typing import Self, TypedDict
@@ -12,7 +13,10 @@ from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
 from sotellme.extraction import extract_cv_text
+from sotellme.profile import CandidateProfile
 from sotellme.prompts import FIXED_OPENING_QUESTION
+
+ProfileParser = Callable[[str], CandidateProfile]
 
 
 class EngineError(Exception):
@@ -22,6 +26,7 @@ class EngineError(Exception):
 class InterviewState(TypedDict, total=False):
     cv_path: str
     cv_text: str
+    profile: CandidateProfile
     question: str
     answer: str
 
@@ -29,6 +34,7 @@ class InterviewState(TypedDict, total=False):
 class SessionHandle(BaseModel):
     thread_id: str
     question: str
+    profile: CandidateProfile
 
 
 def _extract(state: InterviewState) -> InterviewState:
@@ -45,17 +51,28 @@ def _await_answer(state: InterviewState) -> InterviewState:
 
 
 class InterviewEngine:
-    def __init__(self, data_dir: Path, callbacks: list[BaseCallbackHandler] | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        profile_parser: ProfileParser,
+        callbacks: list[BaseCallbackHandler] | None = None,
+    ) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
         self._data_dir = data_dir
         self._callbacks = callbacks or []
         self._conn = sqlite3.connect(data_dir / "checkpoints.sqlite", check_same_thread=False)
+
+        def parse_profile(state: InterviewState) -> InterviewState:
+            return {"profile": profile_parser(state["cv_text"])}
+
         graph = StateGraph(InterviewState)
         graph.add_node("extract", _extract)
+        graph.add_node("parse_profile", parse_profile)
         graph.add_node("pose_question", _pose_question)
         graph.add_node("await_answer", _await_answer)
         graph.add_edge(START, "extract")
-        graph.add_edge("extract", "pose_question")
+        graph.add_edge("extract", "parse_profile")
+        graph.add_edge("parse_profile", "pose_question")
         graph.add_edge("pose_question", "await_answer")
         graph.add_edge("await_answer", END)
         self._graph = graph.compile(checkpointer=SqliteSaver(self._conn))
@@ -97,4 +114,8 @@ class InterviewEngine:
         state = self._graph.get_state(self._config(thread_id))
         if not state.next:
             raise EngineError("The last session is already finished. Start a new one.")
-        return SessionHandle(thread_id=thread_id, question=state.values["question"])
+        return SessionHandle(
+            thread_id=thread_id,
+            question=state.values["question"],
+            profile=state.values["profile"],
+        )

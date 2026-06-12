@@ -1,0 +1,41 @@
+{
+  "description": "Named facts the CandidateProfile extraction must surface from the synthetic fixture CV. Each fact is a case-insensitive substring that must appear in the named profile field. Synthetic data is a stopgap; see the eval layering decision in plans/decisions/evals-and-observability.md.",
+  "cases": [
+    {
+      "name": "markdown-cv",
+      "fixture": "synthetic_cv.md",
+      "named_facts": [
+        { "field": "roles", "substring": "Helioscope Analytics" },
+        { "field": "roles", "substring": "Senior Software Engineer" },
+        { "field": "roles", "substring": "Dunav Logistics" },
+        { "field": "projects", "substring": "openroster" },
+        { "field": "quantified_claims", "substring": "38%" },
+        { "field": "quantified_claims", "substring": "90 seconds" },
+        { "field": "quantified_claims", "substring": "team of 6" },
+        { "field": "technologies", "substring": "Kafka" },
+        { "field": "technologies", "substring": "Python" },
+        { "field": "technologies", "substring": "Go" }
+      ]
+    },
+    {
+      "name": "plaintext-cv",
+      "fixture": "synthetic_cv.txt",
+      "named_facts": [
+        { "field": "roles", "substring": "Helioscope Analytics" },
+        { "field": "projects", "substring": "openroster" },
+        { "field": "quantified_claims", "substring": "38%" },
+        { "field": "technologies", "substring": "Kafka" }
+      ]
+    },
+    {
+      "name": "pdf-cv",
+      "fixture": "synthetic_cv.pdf",
+      "named_facts": [
+        { "field": "roles", "substring": "Helioscope Analytics" },
+        { "field": "projects", "substring": "openroster" },
+        { "field": "quantified_claims", "substring": "38%" },
+        { "field": "technologies", "substring": "Kafka" }
+      ]
+    }
+  ]
+}

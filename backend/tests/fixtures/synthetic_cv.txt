@@ -1,0 +1,30 @@
+Mira Stanic
+Senior Software Engineer - Novi Sad, Serbia
+mira.stanic@example.com
+
+EXPERIENCE
+
+Senior Software Engineer, Helioscope Analytics (2021 - present)
+- Led the migration of the ingestion pipeline from nightly batches to streaming
+  (Kafka, Python), cutting data latency from 4 hours to 90 seconds.
+- Reduced p95 API latency by 38% by introducing a Redis read-through cache in
+  front of PostgreSQL.
+- Mentored a team of 6 engineers through the company's first SOC 2 audit.
+
+Software Engineer, Dunav Logistics (2017 - 2021)
+- Built the berth-scheduling service in Go, saving an estimated 40000 EUR per
+  year in demurrage fees.
+- Carried the on-call pager for the tracking platform, driving incident count
+  down from 12 to 3 per quarter.
+
+PROJECTS
+
+openroster - open-source shift-planning library in Python with 2300 GitHub
+stars; maintainer since 2019.
+
+ferryline - hobby real-time ferry tracker for the Danube, built with Go and
+WebSockets.
+
+SKILLS
+
+Python, Go, Kafka, Redis, PostgreSQL, Docker, Kubernetes, Terraform

@@ -6,7 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 
 PROVIDER_DEFAULTS = {
-    "anthropic": ("claude-haiku-4-5", "claude-opus-4-8"),
+    "anthropic": ("claude-sonnet-4-6", "claude-opus-4-8"),
     "openai": ("gpt-5.4-mini", "gpt-5.5"),
     "google_genai": ("gemini-3.5-flash", "gemini-3.1-pro-preview"),
 }
