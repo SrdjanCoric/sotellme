@@ -7,9 +7,10 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from sotellme.config import ModelConfigError, resolve_model_config
-from sotellme.engine import EngineError, InterviewEngine, SessionHandle
+from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
+from sotellme.engine import EngineError, InterviewEngine, ProfileParser, SessionHandle
 from sotellme.extraction import CVInputError
+from sotellme.profile import ProfileParseError, parse_candidate_profile
 from sotellme.tracing import TracingError, langfuse_callbacks
 
 CLOSING_MESSAGE = "That's a wrap for the walking skeleton. Grading and coaching arrive soon."
@@ -54,6 +55,11 @@ def _data_dir() -> Path:
     return Path(os.environ.get("SOTELLME_DATA_DIR", "~/.sotellme")).expanduser()
 
 
+def _build_profile_parser(config: ModelConfig) -> ProfileParser:
+    model = build_chat_model(config, "fast")
+    return lambda cv_text: parse_candidate_profile(cv_text, model)
+
+
 def _run_question_turn(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
     console.print(Panel(session.question, title="Interviewer", border_style="cyan"))
     console.print("[dim]Answer below. End with a blank line or /done.[/dim]")
@@ -67,21 +73,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     console = Console()
     try:
-        resolve_model_config(
+        config = resolve_model_config(
             env=os.environ,
             provider=args.provider,
             fast_model=args.fast_model,
             smart_model=args.smart_model,
         )
         callbacks = langfuse_callbacks(os.environ)
-        with InterviewEngine(data_dir=_data_dir(), callbacks=callbacks) as engine:
+        engine = InterviewEngine(
+            data_dir=_data_dir(),
+            profile_parser=_build_profile_parser(config),
+            callbacks=callbacks,
+        )
+        with engine:
             if args.command == "interview":
                 with console.status("Reading your CV..."):
                     session = engine.start(Path(args.cv))
             else:
                 session = engine.resume_latest()
             _run_question_turn(console, engine, session)
-    except (ModelConfigError, CVInputError, EngineError, TracingError) as exc:
+    except (ModelConfigError, CVInputError, ProfileParseError, EngineError, TracingError) as exc:
         console.print(f"[red]{exc}[/red]")
         return 1
     return 0

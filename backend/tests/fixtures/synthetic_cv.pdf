@@ -1,0 +1,63 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 1304 >>
+stream
+BT /F1 12 Tf 72 720 Td 14 TL
+(Mira Stanic) Tj T*
+(Senior Software Engineer - Novi Sad, Serbia) Tj T*
+(mira.stanic@example.com) Tj T*
+() Tj T*
+(EXPERIENCE) Tj T*
+() Tj T*
+(Senior Software Engineer, Helioscope Analytics \(2021 - present\)) Tj T*
+(- Led the migration of the ingestion pipeline from nightly batches to streaming) Tj T*
+(  \(Kafka, Python\), cutting data latency from 4 hours to 90 seconds.) Tj T*
+(- Reduced p95 API latency by 38% by introducing a Redis read-through cache in) Tj T*
+(  front of PostgreSQL.) Tj T*
+(- Mentored a team of 6 engineers through the company's first SOC 2 audit.) Tj T*
+() Tj T*
+(Software Engineer, Dunav Logistics \(2017 - 2021\)) Tj T*
+(- Built the berth-scheduling service in Go, saving an estimated 40000 EUR per) Tj T*
+(  year in demurrage fees.) Tj T*
+(- Carried the on-call pager for the tracking platform, driving incident count) Tj T*
+(  down from 12 to 3 per quarter.) Tj T*
+() Tj T*
+(PROJECTS) Tj T*
+() Tj T*
+(openroster - open-source shift-planning library in Python with 2300 GitHub) Tj T*
+(stars; maintainer since 2019.) Tj T*
+() Tj T*
+(ferryline - hobby real-time ferry tracker for the Danube, built with Go and) Tj T*
+(WebSockets.) Tj T*
+() Tj T*
+(SKILLS) Tj T*
+() Tj T*
+(Python, Go, Kafka, Redis, PostgreSQL, Docker, Kubernetes, Terraform) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001597 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1667
+%%EOF

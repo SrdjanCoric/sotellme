@@ -7,7 +7,7 @@ def test_provider_arg_fills_both_slots_with_defaults() -> None:
     config = resolve_model_config(provider="anthropic", env={"ANTHROPIC_API_KEY": "sk-test"})
 
     assert config.provider == "anthropic"
-    assert config.fast_model == "claude-haiku-4-5"
+    assert config.fast_model == "claude-sonnet-4-6"
     assert config.smart_model == "claude-opus-4-8"
 
 
@@ -37,7 +37,7 @@ def test_build_chat_model_routes_slot_to_provider_model(
 
     model = build_chat_model(config, "fast")
 
-    assert "claude-haiku-4-5" in str(getattr(model, "model", ""))
+    assert "claude-sonnet-4-6" in str(getattr(model, "model", ""))
 
 
 def test_openai_provider_defaults_and_key_var() -> None:

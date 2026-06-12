@@ -6,8 +6,18 @@ import pytest
 import sotellme.prompts
 from sotellme.config import PROVIDER_KEY_VARS
 from sotellme.engine import InterviewEngine
+from sotellme.profile import CandidateProfile, Role
 
 SENTINEL = "SECRET-SENTINEL-do-not-leak"
+
+
+def stub_parser(cv_text: str) -> CandidateProfile:
+    return CandidateProfile(
+        roles=[Role(title="Senior Engineer", organization="Acme")],
+        projects=[],
+        quantified_claims=[],
+        technologies=[],
+    )
 
 
 def test_no_env_secret_reaches_session_text(
@@ -18,7 +28,7 @@ def test_no_env_secret_reaches_session_text(
 
     cv = tmp_path / "cv.md"
     cv.write_text("# Jane Doe\nSenior Engineer at Acme")
-    with InterviewEngine(data_dir=tmp_path / "data") as engine:
+    with InterviewEngine(data_dir=tmp_path / "data", profile_parser=stub_parser) as engine:
         session = engine.start(cv)
         engine.submit_answer(session.thread_id, "An answer.")
         state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
