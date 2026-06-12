@@ -14,6 +14,7 @@ import sys
 import sotellme.cli as cli
 from sotellme.coverage import StarFlags
 from sotellme.profile import CandidateProfile, Role
+from sotellme.role import default_role_context
 
 
 def stub_parser(cv_text):
@@ -36,19 +37,32 @@ def keyword_flagger(answer):
 
 
 class StubInterviewer:
-    def opening_question(self, profile):
+    def competency_question(self, profile, transcript, competency):
         return "Tell me about the Acme migration you led."
 
     def probe_question(self, profile, transcript, gaps):
         return f"Follow-up: what about the {gaps[0]}?"
 
+    def motivation_question(self, context, posting_text, transcript, topic):
+        return f"Why this {topic}?"
+
     def closing_turn(self, transcript):
         return "That covers the migration, thanks for walking me through it."
 
 
+_real_engine = cli.InterviewEngine
+
+
+def _one_competency_engine(**kwargs):
+    kwargs["max_competencies"] = 1
+    return _real_engine(**kwargs)
+
+
+cli.InterviewEngine = _one_competency_engine
 cli._build_profile_parser = lambda config: stub_parser
 cli._build_star_flagger = lambda config: keyword_flagger
 cli._build_interviewer = lambda config: StubInterviewer()
+cli._build_role_builder = lambda config: (lambda posting_text: default_role_context())
 sys.exit(cli.main(sys.argv[1:]))
 """
 
@@ -95,6 +109,10 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
         text=True,
     )
     try:
+        _read_until(proc, "What level is this interview for?")
+        assert proc.stdin is not None
+        proc.stdin.write("mid\n")
+        proc.stdin.flush()
         _read_until(proc, "blank line or /done")
     finally:
         proc.kill()

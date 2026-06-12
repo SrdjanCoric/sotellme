@@ -13,16 +13,39 @@ from sotellme.engine import (
     InterviewEngine,
     Interviewer,
     ProfileParser,
+    RoleBuilder,
     SessionHandle,
     StarFlagger,
 )
 from sotellme.extraction import CVInputError
 from sotellme.flagger import StarFlaggerError, flag_star_elements
 from sotellme.interviewer import LLMInterviewer
+from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import ProfileParseError, parse_candidate_profile
+from sotellme.role import RoleContextError, TargetLevel, build_role_context
 from sotellme.tracing import TracingError, langfuse_callbacks
 
 CLOSING_MESSAGE = "That's a wrap. Grading and coaching arrive in a coming release."
+
+LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff)"
+
+TARGET_LEVELS: tuple[TargetLevel, ...] = ("junior", "mid", "senior", "staff")
+
+
+def parse_target_level(raw: str) -> TargetLevel | None:
+    cleaned = raw.strip().lower()
+    if cleaned in TARGET_LEVELS:
+        return cleaned
+    return None
+
+
+def ask_target_level(read_line: Callable[[], str], show: Callable[[str], None]) -> TargetLevel:
+    show(LEVEL_PROMPT)
+    while True:
+        level = parse_target_level(read_line())
+        if level is not None:
+            return level
+        show("Please answer junior, mid, senior, or staff.")
 
 
 def read_multiline_answer(read_line: Callable[[], str]) -> str:
@@ -46,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     interview = subcommands.add_parser("interview", help="Start a new interview session.")
     interview.add_argument("--cv", required=True, help="Path to your CV (PDF, markdown, or text).")
+    interview.add_argument(
+        "--job",
+        help="The job posting: a link, a file path, or the pasted posting text.",
+    )
     _add_model_flags(interview)
 
     resume = subcommands.add_parser("resume", help="Resume the latest interrupted session.")
@@ -78,7 +105,16 @@ def _build_interviewer(config: ModelConfig) -> Interviewer:
     return LLMInterviewer(build_chat_model(config, "fast"))
 
 
+def _build_role_builder(config: ModelConfig) -> RoleBuilder:
+    model = build_chat_model(config, "fast")
+    return lambda posting_text: build_role_context(posting_text, model)
+
+
 def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
+    if session.needs_level:
+        level = ask_target_level(input, console.print)
+        with console.status("Starting the session..."):
+            session = engine.submit_level(session.thread_id, level)
     question: str | None = session.question
     closing: str | None = None
     while question is not None:
@@ -104,25 +140,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             fast_model=args.fast_model,
             smart_model=args.smart_model,
         )
+        posting_text = None
+        if args.command == "interview" and args.job:
+            posting_text = resolve_posting_text(args.job)
         callbacks = langfuse_callbacks(os.environ)
         engine = InterviewEngine(
             data_dir=_data_dir(),
             profile_parser=_build_profile_parser(config),
             star_flagger=_build_star_flagger(config),
             interviewer=_build_interviewer(config),
+            role_builder=_build_role_builder(config),
             callbacks=callbacks,
         )
         with engine:
             if args.command == "interview":
-                with console.status("Reading your CV..."):
-                    session = engine.start(Path(args.cv))
+                with console.status("Reading your CV and the posting..."):
+                    session = engine.start(Path(args.cv), posting_text=posting_text)
             else:
                 session = engine.resume_latest()
             _run_session(console, engine, session)
     except (
         ModelConfigError,
         CVInputError,
+        PostingInputError,
         ProfileParseError,
+        RoleContextError,
         StarFlaggerError,
         EngineError,
         TracingError,

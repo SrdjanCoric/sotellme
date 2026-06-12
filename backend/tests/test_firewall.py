@@ -4,15 +4,20 @@ from sotellme.coverage import StarFlags
 from sotellme.prompts import (
     CLOSING_HUMAN_TEMPLATE,
     CLOSING_SYSTEM_PROMPT,
+    COMPETENCY_OPENING_HUMAN_TEMPLATE,
+    COMPETENCY_QUESTION_HUMAN_TEMPLATE,
     GAP_GUIDANCE,
     HOUSE_VOICE,
     INTERVIEWER_SYSTEM_PROMPT,
-    OPENING_QUESTION_HUMAN_TEMPLATE,
+    MOTIVATION_GUIDANCE,
+    MOTIVATION_QUESTION_HUMAN_TEMPLATE,
+    MOTIVATION_SYSTEM_PROMPT,
     PROBE_QUESTION_HUMAN_TEMPLATE,
     STAR_FLAGGER_HUMAN_TEMPLATE,
     STAR_FLAGGER_SYSTEM_PROMPT,
     closing_messages,
-    opening_question_messages,
+    competency_question_messages,
+    motivation_question_messages,
     probe_question_messages,
     star_flagger_messages,
 )
@@ -49,17 +54,25 @@ def interviewer_and_flagger_prompt_assembly() -> list[str]:
     artifacts = [
         HOUSE_VOICE,
         INTERVIEWER_SYSTEM_PROMPT,
-        OPENING_QUESTION_HUMAN_TEMPLATE,
+        COMPETENCY_OPENING_HUMAN_TEMPLATE,
+        COMPETENCY_QUESTION_HUMAN_TEMPLATE,
         PROBE_QUESTION_HUMAN_TEMPLATE,
+        MOTIVATION_SYSTEM_PROMPT,
+        MOTIVATION_QUESTION_HUMAN_TEMPLATE,
         CLOSING_SYSTEM_PROMPT,
         CLOSING_HUMAN_TEMPLATE,
         STAR_FLAGGER_SYSTEM_PROMPT,
         STAR_FLAGGER_HUMAN_TEMPLATE,
         *GAP_GUIDANCE.values(),
+        *MOTIVATION_GUIDANCE.values(),
     ]
     for messages in (
-        opening_question_messages(NEUTRAL_PROFILE),
+        competency_question_messages(NEUTRAL_PROFILE, "", "ownership"),
+        competency_question_messages(NEUTRAL_PROFILE, NEUTRAL_TRANSCRIPT, "conflict"),
         probe_question_messages(NEUTRAL_PROFILE, NEUTRAL_TRANSCRIPT, ("result",)),
+        motivation_question_messages(
+            "Company: Acme", "Acme builds billing software.", NEUTRAL_TRANSCRIPT, "company"
+        ),
         closing_messages(NEUTRAL_TRANSCRIPT),
         star_flagger_messages("We migrated the pipeline."),
     ):

@@ -1,4 +1,4 @@
-EM_DASH = "—"
+from sotellme.voice import DASH_TELLS
 
 BANNED_PHRASES = (
     "great answer",
@@ -18,8 +18,7 @@ BANNED_PHRASES = (
 def voice_tells(text: str) -> list[str]:
     lowered = text.lower()
     tells: list[str] = []
-    if EM_DASH in text:
-        tells.append("em dash")
+    tells.extend(tell for dash, tell in DASH_TELLS.items() if dash in text)
     if "!" in text:
         tells.append("exclamation mark")
     tells.extend(phrase for phrase in BANNED_PHRASES if phrase in lowered)

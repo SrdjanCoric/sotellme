@@ -11,7 +11,7 @@ from sotellme.flagger import flag_star_elements
 
 CASES_FILE = Path(__file__).parent.parent / "evals" / "star_flagger_cases.json"
 
-EVAL_PROVIDER = os.environ.get("SOTELLME_PROVIDER", "anthropic")
+EVAL_PROVIDER = os.environ.get("SOTELLME_PROVIDER", "google_genai")
 
 needs_provider_key = pytest.mark.skipif(
     not os.environ.get(PROVIDER_KEY_VARS.get(EVAL_PROVIDER, ""), ""),
