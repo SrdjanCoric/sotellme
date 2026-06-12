@@ -1,0 +1,118 @@
+{
+  "description": "Interviewer behavior cases. The opening check is scripted: the generated opening question must reference at least one concrete claim from the committed synthetic profile. The probe cases are judged by an LLM (smart slot) because 'probes the flagged gap' and 'leads the witness' cannot be string-matched; judge verdicts get a human spot-check per plans/decisions/evals-and-observability.md. Every generated question and the closing turn additionally pass a deterministic voice tell-scan (no em dash, no exclamation mark, no gushing), and the leakage case checks that nothing from the prompt's style examples (placeholders or surrounding wording) surfaces in output, per plans/decisions/interviewer-prompt-distillation.md.",
+  "profile": {
+    "roles": [
+      {
+        "title": "Senior Software Engineer",
+        "organization": "Helioscope Analytics",
+        "period": "2021 - present"
+      },
+      {
+        "title": "Software Engineer",
+        "organization": "Dunav Logistics",
+        "period": "2017 - 2021"
+      }
+    ],
+    "projects": [
+      {
+        "name": "openroster",
+        "description": "Open-source shift-planning library in Python with 2300 GitHub stars; maintainer since 2019."
+      },
+      {
+        "name": "ferryline",
+        "description": "Hobby real-time ferry tracker for the Danube, built with Go and WebSockets."
+      }
+    ],
+    "quantified_claims": [
+      "cutting data latency from 4 hours to 90 seconds",
+      "Reduced p95 API latency by 38%",
+      "Mentored a team of 6 engineers through the company's first SOC 2 audit",
+      "saving an estimated 40000 EUR per year in demurrage fees",
+      "driving incident count down from 12 to 3 per quarter"
+    ],
+    "technologies": ["Python", "Go", "Kafka", "Redis", "PostgreSQL"]
+  },
+  "opening": {
+    "claim_substrings": [
+      "helioscope",
+      "dunav",
+      "openroster",
+      "ferryline",
+      "ingestion",
+      "90 seconds",
+      "38",
+      "soc 2",
+      "berth",
+      "demurrage",
+      "shift-planning",
+      "incident",
+      "kafka",
+      "ferry"
+    ]
+  },
+  "leakage": {
+    "profile": {
+      "roles": [
+        {
+          "title": "Backend Engineer",
+          "organization": "Quietwater Labs",
+          "period": "2022 - present"
+        }
+      ],
+      "projects": [],
+      "quantified_claims": ["halved the nightly report run from 6 hours to 3"],
+      "technologies": ["Python"]
+    },
+    "transcript": [
+      {
+        "question": "You halved the nightly report run at Quietwater Labs. Tell me about that.",
+        "answer": "The reports kept overrunning into business hours, so I profiled the job and rewrote the slowest queries."
+      }
+    ],
+    "gaps": ["result"]
+  },
+  "closing": {
+    "transcript": [
+      {
+        "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+        "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+      },
+      {
+        "question": "And once the streaming pipeline was live, what came of it?",
+        "answer": "Dashboard latency went from four hours to about ninety seconds, and the stale-data complaints stopped almost entirely."
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "probe-missing-result",
+      "transcript": [
+        {
+          "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+          "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+        }
+      ],
+      "gaps": ["result"]
+    },
+    {
+      "name": "probe-unquantified-result",
+      "transcript": [
+        {
+          "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+          "answer": "We were on nightly batches and clients kept complaining that dashboards were stale. I led the move to Kafka streaming, and after the rollout the dashboards updated much faster and the complaints mostly stopped."
+        }
+      ],
+      "gaps": ["quantified_result"]
+    },
+    {
+      "name": "probe-missing-action",
+      "transcript": [
+        {
+          "question": "Tell me about the SOC 2 audit at Helioscope.",
+          "answer": "The company had never been audited before and we needed SOC 2 to close enterprise deals, so the team spent two quarters getting controls in place and we passed on the first try."
+        }
+      ],
+      "gaps": ["action"]
+    }
+  ]
+}

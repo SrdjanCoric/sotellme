@@ -1,11 +1,14 @@
 import inspect
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
 import sotellme.prompts
 from sotellme.config import PROVIDER_KEY_VARS
+from sotellme.coverage import Gap, StarFlags
 from sotellme.engine import InterviewEngine
+from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
 
 SENTINEL = "SECRET-SENTINEL-do-not-leak"
@@ -20,6 +23,26 @@ def stub_parser(cv_text: str) -> CandidateProfile:
     )
 
 
+def incomplete_then_complete_flagger(answer: str) -> StarFlags:
+    complete = "everything" in answer
+    return StarFlags(
+        situation=True, task=True, action=True, result=complete, quantified_result=complete
+    )
+
+
+class StubInterviewer:
+    def opening_question(self, profile: CandidateProfile) -> str:
+        return "Tell me about the Acme work."
+
+    def probe_question(
+        self, profile: CandidateProfile, transcript: Sequence[Turn], gaps: tuple[Gap, ...]
+    ) -> str:
+        return f"What about the {gaps[0]}?"
+
+    def closing_turn(self, transcript: Sequence[Turn]) -> str:
+        return "That covers it, thanks."
+
+
 def test_no_env_secret_reaches_session_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -28,12 +51,19 @@ def test_no_env_secret_reaches_session_text(
 
     cv = tmp_path / "cv.md"
     cv.write_text("# Jane Doe\nSenior Engineer at Acme")
-    with InterviewEngine(data_dir=tmp_path / "data", profile_parser=stub_parser) as engine:
+    engine = InterviewEngine(
+        data_dir=tmp_path / "data",
+        profile_parser=stub_parser,
+        star_flagger=incomplete_then_complete_flagger,
+        interviewer=StubInterviewer(),
+    )
+    with engine:
         session = engine.start(cv)
-        engine.submit_answer(session.thread_id, "An answer.")
+        probe = engine.submit_answer(session.thread_id, "An answer.")
+        engine.submit_answer(session.thread_id, "An answer with everything.")
         state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
 
-    session_text = session.question + repr(state.values)
+    session_text = session.question + str(probe.next_question) + repr(state.values)
     assert SENTINEL not in session_text
 
 
