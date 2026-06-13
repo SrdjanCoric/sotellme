@@ -4,6 +4,9 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from rich.console import Console
 from rich.panel import Panel
 
@@ -36,6 +39,13 @@ LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff
 
 TARGET_LEVELS: tuple[TargetLevel, ...] = ("junior", "mid", "senior", "staff")
 
+PLAIN_ANSWER_HINT = "[dim]Answer below. End with a blank line or /done.[/dim]"
+
+RICH_ANSWER_HINT = (
+    "[dim]Enter for a new line · Esc then Enter to send · "
+    "/done on its own line also sends · Ctrl-X Ctrl-E to edit in your $EDITOR.[/dim]"
+)
+
 
 def parse_target_level(raw: str) -> TargetLevel | None:
     cleaned = raw.strip().lower()
@@ -53,6 +63,20 @@ def ask_target_level(read_line: Callable[[], str], show: Callable[[str], None]) 
         show("Please answer junior, mid, senior, or staff.")
 
 
+DONE_SENTINEL = "/done"
+
+
+def strip_done_sentinel(text: str) -> str:
+    lines = text.split("\n")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and lines[-1].strip() == DONE_SENTINEL:
+        lines.pop()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
 def read_multiline_answer(read_line: Callable[[], str]) -> str:
     lines: list[str] = []
     while True:
@@ -60,10 +84,39 @@ def read_multiline_answer(read_line: Callable[[], str]) -> str:
             line = read_line()
         except EOFError:
             break
-        if not line.strip() or line.strip() == "/done":
+        if not line.strip() or line.strip() == DONE_SENTINEL:
             break
         lines.append(line)
     return "\n".join(lines)
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty()
+
+
+def _build_answer_session() -> PromptSession[str]:
+    bindings = KeyBindings()
+
+    @bindings.add("enter")
+    def _submit_or_newline(event: KeyPressEvent) -> None:
+        buffer = event.current_buffer
+        if buffer.document.current_line.strip() == DONE_SENTINEL:
+            buffer.validate_and_handle()
+        else:
+            buffer.insert_text("\n")
+
+    @bindings.add("escape", "enter")
+    def _submit(event: KeyPressEvent) -> None:
+        event.current_buffer.validate_and_handle()
+
+    return PromptSession(multiline=True, key_bindings=bindings, enable_open_in_editor=True)
+
+
+def _read_interactive_answer(session: PromptSession[str]) -> str:
+    try:
+        return strip_done_sentinel(session.prompt())
+    except EOFError:
+        return ""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -129,16 +182,25 @@ def _build_researcher(config: ModelConfig) -> Researcher:
 
 
 def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
+    interactive = _interactive()
+    answer_session = _build_answer_session() if interactive else None
+    level_session: PromptSession[str] | None = PromptSession() if interactive else None
+
     if session.needs_level:
-        level = ask_target_level(input, console.print)
+        read_level = (lambda: level_session.prompt("> ")) if level_session else input
+        level = ask_target_level(read_level, console.print)
         with console.status("Starting the session..."):
             session = engine.submit_level(session.thread_id, level)
     question: str | None = session.question
     closing: str | None = None
     while question is not None:
         console.print(Panel(question, title="Interviewer", border_style="cyan"))
-        console.print("[dim]Answer below. End with a blank line or /done.[/dim]")
-        answer = read_multiline_answer(input)
+        if answer_session is not None:
+            console.print(RICH_ANSWER_HINT)
+            answer = _read_interactive_answer(answer_session)
+        else:
+            console.print(PLAIN_ANSWER_HINT)
+            answer = read_multiline_answer(input)
         with console.status("Thinking..."):
             result = engine.submit_answer(session.thread_id, answer)
         question = result.next_question

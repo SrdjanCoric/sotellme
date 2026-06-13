@@ -1,4 +1,28 @@
-from sotellme.cli import ask_target_level, build_parser, parse_target_level, read_multiline_answer
+from sotellme.cli import (
+    ask_target_level,
+    build_parser,
+    parse_target_level,
+    read_multiline_answer,
+    strip_done_sentinel,
+)
+
+
+def test_strip_done_sentinel_removes_a_trailing_done_line() -> None:
+    assert strip_done_sentinel("My answer.\n/done") == "My answer."
+
+
+def test_strip_done_sentinel_leaves_plain_text_untouched() -> None:
+    assert strip_done_sentinel("My answer.") == "My answer."
+
+
+def test_strip_done_sentinel_preserves_internal_blank_lines() -> None:
+    assert strip_done_sentinel("Paragraph one.\n\nParagraph two.\n/done") == (
+        "Paragraph one.\n\nParagraph two."
+    )
+
+
+def test_strip_done_sentinel_handles_trailing_whitespace_around_done() -> None:
+    assert strip_done_sentinel("My answer.\n /done \n\n") == "My answer."
 
 
 def test_answer_ends_at_blank_line() -> None:
