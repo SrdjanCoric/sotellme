@@ -1,5 +1,5 @@
 {
- "description": "Per-turn decisions the interview director must get right. Each case is a full situation (profile, role details, brief, transcript, assessment notes, question count) with the set of acceptable actions; the check is exact membership. The stop-timing cases pin Phase 4a's acceptance criterion that session length follows the director's own judgment: a strong, fully-probed session wraps well short of the cap, early strength never wraps, an unexplained impact claim draws a follow-up, and a topic that stays vague after repeated probing is moved past rather than belabored. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "description": "Per-turn decisions the interview director must get right. Each case is a full situation (profile, role details, brief, transcript, assessment notes, question count) with the set of acceptable actions; the check is exact membership. The stop-timing cases pin Phase 4a's acceptance criterion that session length follows the director's own judgment: a strong, fully-probed session wraps well short of the cap, early strength never wraps, an unexplained impact claim draws a follow-up, and a topic that stays vague after repeated probing is moved past rather than belabored. Sufficiency outranks interest: when the assessor marks the current topic sufficient and STAR-complete, the director moves on even though a chaseable detail remains and the detail is relevant to the role. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
  "profile": {
   "roles": [
    {
@@ -473,6 +473,59 @@
     }
    ],
    "questions_asked": 4,
+   "allowed_actions": [
+    "new_topic"
+   ]
+  },
+  {
+   "name": "a-sufficient-complete-answer-is-not-redrilled-for-relevance",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "Eight years as a backend engineer, the last four on the data platform at Helioscope Analytics. The thread is that I take on the systems nobody else wants to own and make them boring and reliable. On the side I maintain openroster, an open-source shift-planning library."
+    },
+    {
+     "question": "Tell me about something you owned end to end at Helioscope.",
+     "answer": "We kept shipping scheduling changes that quietly broke edge-case rosters, and support would hear about it before we did. I built a regression harness that replays a year of real rosters against every proposed change and fails the build if a roster comes out different without a sign-off. I designed it, wired it into CI, and made a clean replay a merge gate. Bad rosters caught after release went from about a dozen a quarter to none over the last year."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background and the thread running through their work",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": false,
+       "action": true,
+       "result": true,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "take on the systems nobody else wants to own",
+       "maintain openroster, an open-source shift-planning library"
+      ]
+     }
+    },
+    {
+     "topic": "owning the roster regression harness at Helioscope",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": true,
+       "action": true,
+       "result": true,
+       "quantified_result": true
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": [
+       "replays a year of real rosters against every proposed change",
+       "made a clean replay a merge gate"
+      ]
+     }
+    }
+   ],
+   "questions_asked": 2,
    "allowed_actions": [
     "new_topic"
    ]
