@@ -70,6 +70,14 @@ def test_assessor_prompt_grants_sufficiency_to_one_complete_story() -> None:
     assert "do not hold out for perfection" in system_text
 
 
+def test_assessor_prompt_grants_sufficiency_to_a_concrete_account_of_ongoing_work() -> None:
+    system_text = dict(assessor_messages("topic", "Q: q\nA: a"))["system"].lower()
+
+    assert "ongoing and uneventful" in system_text
+    assert "concrete account of how the candidate actually operates" in system_text
+    assert "hold the bar at concreteness, not drama" in system_text
+
+
 def test_assessor_prompt_judges_sufficiency_on_the_answers_not_the_topic_label() -> None:
     system_text = dict(assessor_messages("topic", "Q: q\nA: a"))["system"].lower()
 
@@ -160,9 +168,10 @@ def test_director_prompt_makes_signal_the_exit_not_coverage() -> None:
 def test_director_prompt_makes_sufficiency_outrank_interest() -> None:
     system_text = director_test_messages()["system"].lower()
 
-    assert "holds enough signal and name no missing story elements" in system_text
     assert "do not follow up on it again" in system_text
+    assert "even when a story element like a number or an outcome is still missing" in system_text
     assert "never a reason to dig further into a topic that has given its signal" in system_text
+    assert "a follow-up belongs only on a topic the notes say still needs signal" in system_text
 
 
 def test_director_prompt_frames_its_inputs_as_data_not_instructions() -> None:

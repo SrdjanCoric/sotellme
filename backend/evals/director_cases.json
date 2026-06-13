@@ -1,5 +1,5 @@
 {
- "description": "Per-turn decisions the interview director must get right. Each case is a full situation (profile, role details, brief, transcript, assessment notes, question count) with the set of acceptable actions; the check is exact membership. The stop-timing cases pin Phase 4a's acceptance criterion that session length follows the director's own judgment: a strong, fully-probed session wraps well short of the cap, early strength never wraps, an unexplained impact claim draws a follow-up, and a topic that stays vague after repeated probing is moved past rather than belabored. Sufficiency outranks interest: when the assessor marks the current topic sufficient and STAR-complete, the director moves on even though a chaseable detail remains and the detail is relevant to the role. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "description": "Per-turn decisions the interview director must get right. Each case is a full situation (profile, role details, brief, transcript, assessment notes, question count) with the set of acceptable actions; the check is exact membership. The stop-timing cases pin Phase 4a's acceptance criterion that session length follows the director's own judgment: a strong, fully-probed session wraps well short of the cap, early strength never wraps, an unexplained impact claim draws a follow-up, and a topic that stays vague after repeated probing is moved past rather than belabored. Sufficiency outranks interest: when the assessor marks the current topic sufficient, the director moves on even though a chaseable detail remains, the detail is relevant to the role, or a story element such as an outcome is still missing (the ongoing-work case, where the work produces no outcome to chase). Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
  "profile": {
   "roles": [
    {
@@ -521,6 +521,57 @@
       "claims_worth_chasing": [
        "replays a year of real rosters against every proposed change",
        "made a clean replay a merge gate"
+      ]
+     }
+    }
+   ],
+   "questions_asked": 2,
+   "allowed_actions": [
+    "new_topic"
+   ]
+  },
+  {
+   "name": "a-sufficient-account-of-ongoing-work-is-not-chased-for-an-outcome",
+   "transcript": [
+    {
+     "question": "Tell me a bit about yourself and the thread that runs through your work.",
+     "answer": "Eight years as a backend engineer, the last four on the data platform at Helioscope Analytics. The thread is that I take on the systems nobody else wants to own and make them boring and reliable."
+    },
+    {
+     "question": "You lean on AI coding tools day to day. How do you keep what they generate from quietly degrading the codebase?",
+     "answer": "I never merge what an assistant writes on trust. I read the whole diff and watch for a few things: invented APIs, error handling it dropped, and tests that assert nothing. When I catch one I push back in the same session and have it redo that slice instead of patching over it, and I keep each change small so a bad pattern can't hide."
+    }
+   ],
+   "assessments": [
+    {
+     "topic": "their background and the thread running through their work",
+     "assessment": {
+      "star": {
+       "situation": true,
+       "task": false,
+       "action": true,
+       "result": true,
+       "quantified_result": false
+      },
+      "sufficient_signal": false,
+      "claims_worth_chasing": [
+       "take on the systems nobody else wants to own"
+      ]
+     }
+    },
+    {
+     "topic": "keeping AI-generated code from degrading the codebase",
+     "assessment": {
+      "star": {
+       "situation": false,
+       "task": false,
+       "action": true,
+       "result": false,
+       "quantified_result": false
+      },
+      "sufficient_signal": true,
+      "claims_worth_chasing": [
+       "push back in the same session and have it redo that slice"
       ]
      }
     }
