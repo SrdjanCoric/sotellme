@@ -44,8 +44,10 @@ content with JavaScript in the browser can't be read; the error says so, and pas
 posting text always works. The flag is also optional; without a posting the interview runs on
 a default competency set, with no company research to ground it.
 
-Answers are multi-line: end one with a blank line or `/done`. `uv run sotellme resume` picks
-up the latest interrupted session.
+Answers are multi-line with real line editing: Home, End, arrow keys, and word jumps all
+work, so you can fix a typo three lines up without retyping. Enter starts a new line; Esc
+then Enter sends, or put `/done` on its own line. To rework a long answer, Ctrl-X Ctrl-E opens
+it in your `$EDITOR`. `uv run sotellme resume` picks up the latest interrupted session.
 
 ## Bring your own key
 
