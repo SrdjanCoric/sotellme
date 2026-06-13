@@ -1,147 +1,218 @@
 {
-  "description": "Interviewer behavior cases. The opening check is scripted: the generated opening question must reference at least one concrete claim from the committed synthetic profile. The probe cases are judged by an LLM (smart slot) because 'probes the flagged gap' and 'leads the witness' cannot be string-matched; judge verdicts get a human spot-check per plans/decisions/evals-and-observability.md. Every generated question and the closing turn additionally pass a deterministic voice tell-scan (no em dash, no exclamation mark, no gushing), and the leakage case checks that nothing from the prompt's style examples (placeholders or surrounding wording) surfaces in output, per plans/decisions/interviewer-prompt-distillation.md.",
-  "profile": {
-    "roles": [
-      {
-        "title": "Senior Software Engineer",
-        "organization": "Helioscope Analytics",
-        "period": "2021 - present"
-      },
-      {
-        "title": "Software Engineer",
-        "organization": "Dunav Logistics",
-        "period": "2017 - 2021"
-      }
-    ],
-    "projects": [
-      {
-        "name": "openroster",
-        "description": "Open-source shift-planning library in Python with 2300 GitHub stars; maintainer since 2019."
-      },
-      {
-        "name": "ferryline",
-        "description": "Hobby real-time ferry tracker for the Danube, built with Go and WebSockets."
-      }
-    ],
-    "quantified_claims": [
-      "cutting data latency from 4 hours to 90 seconds",
-      "Reduced p95 API latency by 38%",
-      "Mentored a team of 6 engineers through the company's first SOC 2 audit",
-      "saving an estimated 40000 EUR per year in demurrage fees",
-      "driving incident count down from 12 to 3 per quarter"
-    ],
-    "technologies": ["Python", "Go", "Kafka", "Redis", "PostgreSQL"]
-  },
-  "opening": {
-    "competency": "impact",
-    "claim_substrings": [
-      "helioscope",
-      "dunav",
-      "openroster",
-      "ferryline",
-      "ingestion",
-      "90 seconds",
-      "38",
-      "soc 2",
-      "berth",
-      "demurrage",
-      "shift-planning",
-      "incident",
-      "kafka",
-      "ferry"
-    ]
-  },
-  "leakage": {
-    "profile": {
-      "roles": [
-        {
-          "title": "Backend Engineer",
-          "organization": "Quietwater Labs",
-          "period": "2022 - present"
-        }
-      ],
-      "projects": [],
-      "quantified_claims": ["halved the nightly report run from 6 hours to 3"],
-      "technologies": ["Python"]
-    },
-    "transcript": [
-      {
-        "question": "You halved the nightly report run at Quietwater Labs. Tell me about that.",
-        "answer": "The reports kept overrunning into business hours, so I profiled the job and rewrote the slowest queries."
-      }
-    ],
-    "gaps": ["result"]
-  },
-  "motivation": {
-    "role_context": {
-      "company": "Brightmark Health",
-      "role_title": "Senior Backend Engineer",
-      "competencies": [{ "name": "ownership", "weight": 5 }],
-      "framework": null,
-      "target_level": null
-    },
-    "posting": "Senior Backend Engineer - Brightmark Health\n\nBrightmark Health builds appointment and triage software for rural clinics. Our backend team keeps patient-facing scheduling reliable for practices that have no IT staff of their own. You will own services end to end, work closely with clinicians, and ship carefully: downtime here means missed appointments for real patients.",
-    "topic": "company",
-    "transcript": [
-      {
-        "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
-        "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
-      }
-    ],
-    "company_substring": "brightmark"
-  },
-  "closing": {
-    "transcript": [
-      {
-        "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
-        "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
-      },
-      {
-        "question": "And once the streaming pipeline was live, what came of it?",
-        "answer": "Dashboard latency went from four hours to about ninety seconds, and the stale-data complaints stopped almost entirely."
-      }
-    ]
-  },
-  "cases": [
-    {
-      "name": "probe-missing-result",
-      "transcript": [
-        {
-          "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
-          "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
-        }
-      ],
-      "gaps": ["result"]
-    },
-    {
-      "name": "probe-missing-result-berth-optimizer",
-      "transcript": [
-        {
-          "question": "Tell me about the berth scheduling work at Dunav Logistics.",
-          "answer": "Ships kept idling outside the port because berth assignments were planned by hand on a spreadsheet, so I built an optimizer that planned the assignments a week ahead and worked with the operations team until they trusted its plans."
-        }
-      ],
-      "gaps": ["result"]
-    },
-    {
-      "name": "probe-unquantified-result",
-      "transcript": [
-        {
-          "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
-          "answer": "We were on nightly batches and clients kept complaining that dashboards were stale. I led the move to Kafka streaming, and after the rollout the dashboards updated much faster and the complaints mostly stopped."
-        }
-      ],
-      "gaps": ["quantified_result"]
-    },
-    {
-      "name": "probe-missing-action",
-      "transcript": [
-        {
-          "question": "Tell me about the SOC 2 audit at Helioscope.",
-          "answer": "The company had never been audited before and we needed SOC 2 to close enterprise deals, so the team spent two quarters getting controls in place and we passed on the first try."
-        }
-      ],
-      "gaps": ["action"]
-    }
+ "description": "Interviewer behavior cases for the directive-based question writer. The opening check is scripted: a new-topic directive must yield a question referencing at least one concrete claim from the committed synthetic profile. The follow-up cases are judged by an LLM (smart slot) because 'chases the directive's subject' and 'leads the witness' cannot be string-matched; judge verdicts get a human spot-check per plans/decisions/evals-and-observability.md. The personalization case pins Phase 4a's question-personalization criterion: a why-this-company directive with a company brief must yield a question naming the company's actual product or domain. Every generated question and the closing turn additionally pass a deterministic voice tell-scan, and the leakage case checks that nothing from the prompt's style examples surfaces in output.",
+ "profile": {
+  "roles": [
+   {
+    "title": "Senior Software Engineer",
+    "organization": "Helioscope Analytics",
+    "period": "2021 - present"
+   },
+   {
+    "title": "Software Engineer",
+    "organization": "Dunav Logistics",
+    "period": "2017 - 2021"
+   }
+  ],
+  "projects": [
+   {
+    "name": "openroster",
+    "description": "Open-source shift-planning library in Python with 2300 GitHub stars; maintainer since 2019."
+   },
+   {
+    "name": "ferryline",
+    "description": "Hobby real-time ferry tracker for the Danube, built with Go and WebSockets."
+   }
+  ],
+  "quantified_claims": [
+   "cutting data latency from 4 hours to 90 seconds",
+   "Reduced p95 API latency by 38%",
+   "Mentored a team of 6 engineers through the company's first SOC 2 audit",
+   "saving an estimated 40000 EUR per year in demurrage fees",
+   "driving incident count down from 12 to 3 per quarter"
+  ],
+  "technologies": [
+   "Python",
+   "Go",
+   "Kafka",
+   "Redis",
+   "PostgreSQL"
   ]
+ },
+ "opening": {
+  "directive": {
+   "action": "new_topic",
+   "subject": "a story about real ownership in their past work",
+   "reason": "ownership is what this role leans on hardest"
+  },
+  "claim_substrings": [
+   "helioscope",
+   "dunav",
+   "openroster",
+   "ferryline",
+   "ingestion",
+   "90 seconds",
+   "38",
+   "soc 2",
+   "berth",
+   "demurrage",
+   "shift-planning",
+   "incident",
+   "kafka",
+   "ferry"
+  ]
+ },
+ "leakage": {
+  "profile": {
+   "roles": [
+    {
+     "title": "Backend Engineer",
+     "organization": "Quietwater Labs",
+     "period": "2022 - present"
+    }
+   ],
+   "projects": [],
+   "quantified_claims": [
+    "halved the nightly report run from 6 hours to 3"
+   ],
+   "technologies": [
+    "Python"
+   ]
+  },
+  "transcript": [
+   {
+    "question": "You halved the nightly report run at Quietwater Labs. Tell me about that.",
+    "answer": "The reports kept overrunning into business hours, so I profiled the job and rewrote the slowest queries."
+   }
+  ],
+  "directive": {
+   "action": "follow_up",
+   "subject": "what came of the report-run rewrite",
+   "reason": "the story has no ending yet"
+  }
+ },
+ "personalization": {
+  "role_context": {
+   "company": "Brightmark Health",
+   "role_title": "Senior Backend Engineer",
+   "competencies": [
+    {
+     "name": "ownership",
+     "weight": 5
+    }
+   ],
+   "framework": null,
+   "target_level": null
+  },
+  "brief": "Brightmark Health builds appointment scheduling and triage software for rural clinics. Its backend keeps patient-facing scheduling reliable for practices with no IT staff of their own; downtime means missed appointments for real patients. Clinicians use the triage module to sort incoming calls by urgency, and the company has lately been extending it to text-message intake for patients without smartphones.",
+  "directive": {
+   "action": "new_topic",
+   "subject": "why this company, and whether they understand what it makes",
+   "reason": "the stories are done and motivation is still unprobed"
+  },
+  "transcript": [
+   {
+    "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+    "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+   }
+  ],
+  "product_substrings": [
+   "appointment",
+   "triage",
+   "clinic",
+   "scheduling",
+   "patient",
+   "rural"
+  ]
+ },
+ "closing": {
+  "transcript": [
+   {
+    "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+    "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+   },
+   {
+    "question": "And once the streaming pipeline was live, what came of it?",
+    "answer": "Dashboard latency went from four hours to about ninety seconds, and the stale-data complaints stopped almost entirely."
+   }
+  ]
+ },
+ "cases": [
+  {
+   "name": "chase-missing-result",
+   "transcript": [
+    {
+     "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+     "answer": "We were on nightly batches and clients kept complaining that dashboards were stale, so I designed a streaming pipeline on Kafka and led the rollout across our Python consumers."
+    }
+   ],
+   "directive": {
+    "action": "follow_up",
+    "subject": "what came of the streaming migration for the clients and the business",
+    "reason": "the story ends at the rollout; the outcome is never stated"
+   }
+  },
+  {
+   "name": "chase-missing-result-berth-optimizer",
+   "transcript": [
+    {
+     "question": "Tell me about the berth scheduling work at Dunav Logistics.",
+     "answer": "Ships kept idling outside the port because berth assignments were planned by hand on a spreadsheet, so I built an optimizer that planned the assignments a week ahead and worked with the operations team until they trusted its plans."
+    }
+   ],
+   "directive": {
+    "action": "follow_up",
+    "subject": "how the berth optimizer worked out once the operations team ran with it",
+    "reason": "the story stops at adoption; what changed for the port is never said"
+   }
+  },
+  {
+   "name": "chase-vague-outcome",
+   "transcript": [
+    {
+     "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+     "answer": "We were on nightly batches and clients kept complaining that dashboards were stale. I led the move to Kafka streaming, and after the rollout the dashboards updated much faster and the complaints mostly stopped."
+    }
+   ],
+   "directive": {
+    "action": "follow_up",
+    "subject": "how much faster the dashboards actually got",
+    "reason": "the outcome is stated but nothing measurable says how big it was"
+   }
+  },
+  {
+   "name": "chase-personal-part",
+   "transcript": [
+    {
+     "question": "Tell me about the SOC 2 audit at Helioscope.",
+     "answer": "The company had never been audited before and we needed SOC 2 to close enterprise deals, so the team spent two quarters getting controls in place and we passed on the first try."
+    }
+   ],
+   "directive": {
+    "action": "follow_up",
+    "subject": "what they personally did during the two audit quarters",
+    "reason": "the answer is all 'the team'; their own part never appears"
+   }
+  }
+ ],
+ "topic_opener": {
+  "directive": {
+   "action": "new_topic",
+   "subject": "the ferryline side project and what building it on their own looked like",
+   "reason": "their professional work is well covered; the side project shows how they build when nobody assigns the work"
+  },
+  "transcript": [
+   {
+    "question": "You moved Helioscope's ingestion pipeline from nightly batches to streaming. Tell me about that.",
+    "answer": "Clients were churning over stale dashboards, so I proposed the streaming rebuild, led two engineers through it, and we took latency from 4 hours to 90 seconds."
+   },
+   {
+    "question": "What was the hardest call during that rollout?",
+    "answer": "Holding the cutover a week when a partition-skew bug showed up, even with sales pushing to announce. We cut over clean and the client renewed."
+   }
+  ],
+  "cv_verbatim_substrings": [
+   "real-time ferry tracker for the danube",
+   "built with go and websockets"
+  ]
+ }
 }

@@ -3,6 +3,7 @@ from pathlib import Path
 from stubs import StubChatModel
 from test_engine import build_engine, builder_returning, write_cv
 
+from sotellme.director import DirectorDecision
 from sotellme.interviewer import LLMInterviewer, Turn
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import CompetencyWeight, RoleContext
@@ -29,11 +30,19 @@ def test_the_interviewer_prompt_assembly_never_carries_the_target_level() -> Non
     interviewer = LLMInterviewer(model)
     transcript = [Turn(question="Tell me about the migration.", answer="We migrated.")]
 
-    interviewer.competency_question(PROFILE, [], "ownership")
-    interviewer.competency_question(PROFILE, transcript, "ownership")
-    interviewer.probe_question(PROFILE, transcript, ("result",))
-    interviewer.motivation_question(
-        LEVELED_CONTEXT, "Backend Engineer at Acme.", transcript, "company"
+    interviewer.question_for(
+        DirectorDecision(action="new_topic", subject="their background", reason="the opener"),
+        PROFILE,
+        LEVELED_CONTEXT,
+        "Acme builds billing software.",
+        [],
+    )
+    interviewer.question_for(
+        DirectorDecision(action="follow_up", subject="the migration", reason="the ending"),
+        PROFILE,
+        LEVELED_CONTEXT,
+        "Acme builds billing software.",
+        transcript,
     )
     interviewer.closing_turn(transcript)
 

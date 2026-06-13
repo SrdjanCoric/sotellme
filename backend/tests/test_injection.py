@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from test_engine import StubInterviewer, acme_context, build_engine, builder_returning
+from test_engine import (
+    FOLLOW_UP_DECISION,
+    OPENING_DECISION,
+    ScriptedDirector,
+    StubInterviewer,
+    acme_context,
+    build_engine,
+    builder_returning,
+)
 
 from sotellme.prompts import profile_extraction_messages, role_context_messages
 
@@ -27,39 +35,32 @@ def test_an_injected_posting_is_delimited_as_data() -> None:
     assert injection_stays_inside(human_text, "posting")
 
 
-def run_session_questions(tmp_path: Path, name: str, cv_text: str, posting: str) -> list[str]:
+def test_injected_content_may_steer_the_path_but_never_breaks_the_envelope(
+    tmp_path: Path,
+) -> None:
+    """The absolute flow-invariance claim died with the director redesign: content now
+    legitimately influences which questions get asked. What injected content can never do
+    is push the session past the hard question cap or rob it of its closing turn."""
+    cap = 4
+    relentless = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION])
     interviewer = StubInterviewer()
-    cv = tmp_path / f"{name}.md"
-    cv.write_text(cv_text)
+    cv = tmp_path / "cv.md"
+    cv.write_text(f"# Jane Doe\n{INJECTION}\nEngineer at Acme")
     engine = build_engine(
-        tmp_path / name,
-        max_competencies=2,
-        role_builder=builder_returning(acme_context()),
+        tmp_path / "data",
+        director=relentless,
         interviewer=interviewer,
+        role_builder=builder_returning(acme_context()),
+        question_cap=cap,
     )
-    questions: list[str] = []
     with engine:
-        session = engine.start(cv, posting_text=posting)
+        session = engine.start(cv, posting_text=f"Backend Engineer at Acme.\n{INJECTION}")
         assert session.question is not None
-        questions.append(session.question)
-        result = engine.submit_answer(session.thread_id, "situation task action")
-        while result.next_question is not None:
-            questions.append(result.next_question)
-            result = engine.submit_answer(
-                session.thread_id, "situation task action result quantified"
-            )
-    return questions
+        questions = 1
+        result = engine.submit_answer(session.thread_id, INJECTION)
+        while not result.finished:
+            questions += 1
+            result = engine.submit_answer(session.thread_id, INJECTION)
 
-
-def test_an_injected_cv_and_posting_do_not_alter_the_session_flow(tmp_path: Path) -> None:
-    clean = run_session_questions(
-        tmp_path, "clean", "# Jane Doe\nEngineer at Acme", "Backend Engineer at Acme."
-    )
-    injected = run_session_questions(
-        tmp_path,
-        "injected",
-        f"# Jane Doe\n{INJECTION}\nEngineer at Acme",
-        f"Backend Engineer at Acme.\n{INJECTION}",
-    )
-
-    assert injected == clean
+    assert questions == cap
+    assert result.closing

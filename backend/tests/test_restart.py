@@ -12,7 +12,8 @@ STUB_AGENTS_DRIVER = """\
 import sys
 
 import sotellme.cli as cli
-from sotellme.coverage import StarFlags
+from sotellme.assessor import AnswerAssessment, StarFlags
+from sotellme.director import DirectorDecision
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import default_role_context
 
@@ -26,43 +27,50 @@ def stub_parser(cv_text):
     )
 
 
-def keyword_flagger(answer):
-    return StarFlags(
-        situation="situation" in answer,
-        task="task" in answer,
-        action="action" in answer,
-        result="result" in answer,
-        quantified_result="quantified" in answer,
+def keyword_assessor(topic, transcript):
+    answer = transcript[-1].answer
+    return AnswerAssessment(
+        star=StarFlags(
+            situation="situation" in answer,
+            task="task" in answer,
+            action="action" in answer,
+            result="result" in answer,
+            quantified_result="quantified" in answer,
+        ),
+        sufficient_signal="quantified" in answer,
+        claims_worth_chasing=[],
     )
 
 
+class StubDirector:
+    def decide(self, situation):
+        if not situation.transcript:
+            return DirectorDecision(
+                action="new_topic", subject="the Acme migration", reason="opener"
+            )
+        if situation.assessments[-1].assessment.sufficient_signal:
+            return DirectorDecision(action="wrap_up", reason="enough signal")
+        return DirectorDecision(
+            action="follow_up", subject="the action they took", reason="story incomplete"
+        )
+
+
 class StubInterviewer:
-    def competency_question(self, profile, transcript, competency):
-        return "Tell me about the Acme migration you led."
-
-    def probe_question(self, profile, transcript, gaps):
-        return f"Follow-up: what about the {gaps[0]}?"
-
-    def motivation_question(self, context, posting_text, transcript, topic):
-        return f"Why this {topic}?"
+    def question_for(self, decision, profile, context, brief, transcript):
+        if decision.action == "new_topic":
+            return "Tell me about the Acme migration you led."
+        return f"Follow-up: what about {decision.subject}?"
 
     def closing_turn(self, transcript):
         return "That covers the migration, thanks for walking me through it."
 
 
-_real_engine = cli.InterviewEngine
-
-
-def _one_competency_engine(**kwargs):
-    kwargs["max_competencies"] = 1
-    return _real_engine(**kwargs)
-
-
-cli.InterviewEngine = _one_competency_engine
 cli._build_profile_parser = lambda config: stub_parser
-cli._build_star_flagger = lambda config: keyword_flagger
+cli._build_assessor = lambda config: keyword_assessor
+cli._build_director = lambda config: StubDirector()
 cli._build_interviewer = lambda config: StubInterviewer()
 cli._build_role_builder = lambda config: (lambda posting_text: default_role_context())
+cli._build_researcher = lambda config: (lambda posting_text, context: "")
 sys.exit(cli.main(sys.argv[1:]))
 """
 
@@ -133,6 +141,6 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
 
     assert resumed.returncode == 0, resumed.stdout + resumed.stderr
     assert "Acme migration" in resumed.stdout
-    assert "what about the action" in resumed.stdout
+    assert "what about the action they took" in resumed.stdout
     assert "thanks for walking me through it" in resumed.stdout
     assert CLOSING_MESSAGE in resumed.stdout

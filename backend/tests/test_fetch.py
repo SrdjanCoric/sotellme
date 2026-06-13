@@ -3,14 +3,17 @@ import inspect
 import httpx
 import pytest
 
-import sotellme.engine
 import sotellme.fetch
-import sotellme.flagger
-import sotellme.interviewer
-import sotellme.profile
-import sotellme.role
+import sotellme.research
 from sotellme.extraction import MAX_DOCUMENT_BYTES
-from sotellme.fetch import PostingFetchError, fetch_posting_text, html_to_text
+from sotellme.fetch import (
+    MAX_PAGE_CHARS,
+    PostingFetchError,
+    ResearchFetchError,
+    fetch_posting_text,
+    fetch_research_page,
+    html_to_text,
+)
 
 PAGE = (
     "<html><head><title>Job</title><script>trackVisitors()</script>"
@@ -171,21 +174,72 @@ def test_a_javascript_only_page_explains_itself() -> None:
         fetch_posting_text("https://jobs.acme.com/spa", transport=transport)
 
 
-def test_the_fetcher_never_reads_the_environment() -> None:
-    source = inspect.getsource(sotellme.fetch)
-
-    assert "environ" not in source
-    assert "getenv" not in source
-
-
-def test_no_model_facing_module_can_reach_the_fetcher() -> None:
-    for module in (
-        sotellme.engine,
-        sotellme.interviewer,
-        sotellme.role,
-        sotellme.profile,
-        sotellme.flagger,
-    ):
+def test_the_tool_layer_never_reads_the_environment() -> None:
+    for module in (sotellme.fetch, sotellme.research):
         source = inspect.getsource(module)
-        assert "sotellme.fetch" not in source, f"{module.__name__} imports the fetcher"
-        assert "fetch_posting_text" not in source, f"{module.__name__} can trigger a fetch"
+        assert "environ" not in source, f"{module.__name__} reads the environment"
+        assert "getenv" not in source, f"{module.__name__} reads the environment"
+
+
+def test_a_research_page_yields_truncated_visible_text() -> None:
+    transport = serving(httpx.Response(200, html=PAGE))
+
+    text = fetch_research_page("https://acme.com/about", transport=transport)
+
+    assert "Acme builds billing software for veterinary clinics." in text
+    assert "trackVisitors" not in text
+
+
+def test_a_research_page_is_truncated_to_the_per_page_cap() -> None:
+    long_page = f"<html><body><p>{'word ' * MAX_PAGE_CHARS}</p></body></html>"
+    transport = serving(httpx.Response(200, html=long_page))
+
+    text = fetch_research_page("https://acme.com/about", transport=transport)
+
+    assert len(text) == MAX_PAGE_CHARS
+
+
+def test_localhost_is_refused_before_any_request() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the request must never be sent")
+
+    for url in ("http://localhost/admin", "http://router.localhost/admin"):
+        with pytest.raises(ResearchFetchError, match="refused"):
+            fetch_research_page(url, transport=httpx.MockTransport(handler))
+
+
+def test_private_and_loopback_addresses_are_refused() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("the request must never be sent")
+
+    for url in (
+        "http://127.0.0.1/secrets",
+        "http://10.0.0.1/router",
+        "http://192.168.1.1/admin",
+        "http://169.254.169.254/latest/meta-data",
+        "http://[::1]/admin",
+    ):
+        with pytest.raises(ResearchFetchError, match="refused"):
+            fetch_research_page(url, transport=httpx.MockTransport(handler))
+
+
+def test_non_web_schemes_are_refused() -> None:
+    with pytest.raises(ResearchFetchError, match="refused"):
+        fetch_research_page("file:///etc/passwd")
+
+
+def test_a_redirect_to_a_private_host_is_refused() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "acme.com":
+            return httpx.Response(302, headers={"location": "http://127.0.0.1/admin"})
+        raise AssertionError("the private host must never be reached")
+
+    with pytest.raises(ResearchFetchError, match="refused"):
+        fetch_research_page("https://acme.com/about", transport=httpx.MockTransport(handler))
+
+
+def test_a_failed_research_fetch_is_a_clear_error() -> None:
+    transport = serving(httpx.Response(404))
+
+    with pytest.raises(ResearchFetchError, match="404"):
+        fetch_research_page("https://acme.com/gone", transport=transport)

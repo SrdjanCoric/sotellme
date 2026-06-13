@@ -1,18 +1,21 @@
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 
-from sotellme.coverage import Gap, MotivationTopic
 from sotellme.profile import CandidateProfile
 from sotellme.prompts import (
+    FOLLOW_UP_DIRECTIVE_TEMPLATE,
+    NEW_TOPIC_DIRECTIVE_TEMPLATE,
     closing_messages,
-    competency_question_messages,
-    motivation_question_messages,
-    probe_question_messages,
+    question_messages,
 )
 from sotellme.role import RoleContext
 from sotellme.voice import sanitize
+
+if TYPE_CHECKING:
+    from sotellme.director import DirectorDecision
 
 
 class Turn(BaseModel):
@@ -54,35 +57,30 @@ def render_role_context(context: RoleContext) -> str:
     return "\n".join(lines) or "The posting states no company or role name."
 
 
+def render_directive(decision: "DirectorDecision") -> str:
+    if decision.action == "follow_up":
+        return FOLLOW_UP_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
+    return NEW_TOPIC_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
+
+
 class LLMInterviewer:
     def __init__(self, model: BaseChatModel) -> None:
         self._model = model
 
-    def competency_question(
-        self, profile: CandidateProfile, transcript: Sequence[Turn], competency: str
-    ) -> str:
-        messages = competency_question_messages(
-            render_profile(profile), render_transcript(transcript), competency
-        )
-        return sanitize(self._model.invoke(messages).text)
-
-    def motivation_question(
+    def question_for(
         self,
+        decision: "DirectorDecision",
+        profile: CandidateProfile,
         context: RoleContext,
-        posting_text: str,
+        brief: str,
         transcript: Sequence[Turn],
-        topic: MotivationTopic,
     ) -> str:
-        messages = motivation_question_messages(
-            render_role_context(context), posting_text, render_transcript(transcript), topic
-        )
-        return sanitize(self._model.invoke(messages).text)
-
-    def probe_question(
-        self, profile: CandidateProfile, transcript: Sequence[Turn], gaps: tuple[Gap, ...]
-    ) -> str:
-        messages = probe_question_messages(
-            render_profile(profile), render_transcript(transcript), gaps
+        messages = question_messages(
+            role_details=render_role_context(context),
+            brief=brief,
+            profile_text=render_profile(profile),
+            transcript_text=render_transcript(transcript),
+            directive=render_directive(decision),
         )
         return sanitize(self._model.invoke(messages).text)
 

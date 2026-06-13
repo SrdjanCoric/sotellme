@@ -1,6 +1,8 @@
 import html
+import ipaddress
 import json
 import re
+from collections.abc import Callable
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit
@@ -10,6 +12,8 @@ import httpx
 from sotellme.extraction import MAX_DOCUMENT_BYTES
 
 FETCH_TIMEOUT_SECONDS = 15.0
+
+MAX_PAGE_CHARS = 10_000
 
 PASTE_FALLBACK = "Copy the page and paste the posting text instead."
 
@@ -130,10 +134,18 @@ def _workable_posting_text(body: str) -> str:
     return "\n\n".join(section for section in sections if section.strip())
 
 
-def _download(url: str, transport: httpx.BaseTransport | None) -> tuple[str, str]:
+def _download(
+    url: str,
+    transport: httpx.BaseTransport | None,
+    request_hook: Callable[[httpx.Request], None] | None = None,
+) -> tuple[str, str]:
+    event_hooks = {"request": [request_hook]} if request_hook else {}
     with (
         httpx.Client(
-            follow_redirects=True, timeout=FETCH_TIMEOUT_SECONDS, transport=transport
+            follow_redirects=True,
+            timeout=FETCH_TIMEOUT_SECONDS,
+            transport=transport,
+            event_hooks=event_hooks,
         ) as client,
         client.stream("GET", url) as response,
     ):
@@ -174,3 +186,44 @@ def fetch_posting_text(value: str, transport: httpx.BaseTransport | None = None)
             f"with JavaScript in the browser. {PASTE_FALLBACK}"
         )
     return text
+
+
+class ResearchFetchError(Exception):
+    pass
+
+
+def _refuse_unsafe_host(url: httpx.URL) -> None:
+    if url.scheme not in ("http", "https"):
+        raise ResearchFetchError(f"Fetching {url.scheme!r} links is refused.")
+    host = url.host
+    if not host:
+        raise ResearchFetchError("A link without a host is refused.")
+    if host == "localhost" or host.endswith(".localhost"):
+        raise ResearchFetchError("Fetching localhost is refused.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return
+    if not address.is_global:
+        raise ResearchFetchError(f"Fetching the private or local address {host} is refused.")
+
+
+def fetch_research_page(url: str, transport: httpx.BaseTransport | None = None) -> str:
+    def check_each_hop(request: httpx.Request) -> None:
+        _refuse_unsafe_host(request.url)
+
+    _refuse_unsafe_host(httpx.URL(url))
+    try:
+        body, content_type = _download(url, transport, request_hook=check_each_hop)
+    except ResearchFetchError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise ResearchFetchError(
+            f"The page answered with HTTP {exc.response.status_code}."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise ResearchFetchError(f"Could not fetch the page: {exc}.") from exc
+    text = html_to_text(body) if "html" in content_type else body
+    if not text.strip():
+        raise ResearchFetchError("No readable text found on the page.")
+    return text[:MAX_PAGE_CHARS]

@@ -9,6 +9,7 @@ from sotellme.role import (
     RoleContextError,
     build_role_context,
     default_role_context,
+    level_emphasis,
 )
 
 POSTING = "Senior Backend Engineer at Acme. You will own the billing platform."
@@ -84,3 +85,32 @@ def test_the_default_role_context_covers_the_five_default_competencies() -> None
     assert len(context.competencies) == 5
     assert context.framework is None
     assert context.target_level is None
+
+
+def test_level_emphasis_grows_with_the_target_level() -> None:
+    assert level_emphasis("junior") == ("problem solving", "delivery", "learning")
+    assert level_emphasis("mid") == (
+        "problem solving",
+        "delivery",
+        "learning",
+        "initiative",
+        "trust and conflict",
+    )
+    assert level_emphasis("senior") == (
+        "problem solving",
+        "delivery",
+        "learning",
+        "initiative",
+        "trust and conflict",
+        "strategic leadership",
+        "developing others",
+        "innovation",
+    )
+    assert level_emphasis("staff") == level_emphasis("senior")
+
+
+def test_level_emphasis_names_carry_no_level_words() -> None:
+    level_words = ("junior", "mid", "senior", "staff", "level")
+    for level in ("junior", "mid", "senior", "staff"):
+        for name in level_emphasis(level):
+            assert not any(word in name for word in level_words), name
