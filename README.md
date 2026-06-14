@@ -2,8 +2,9 @@
 
 A mock behavioral interviewer that runs in your terminal. You hand it your CV and a job
 posting; it researches the company, then runs an interview grounded in what your CV actually
-claims and in what the company actually makes. Grading and a coaching report are the next
-phases on the plan; today the tool conducts the interview itself.
+claims and in what the company actually makes. When the interview ends it grades every answer
+and prints a scorecard; the coaching report that turns those scores into advice is the next
+phase on the plan.
 
 An LLM interview director runs the session the way a trained interviewer would: it opens by
 asking who you are, digs into your most significant work, picks a few targeted stories to
@@ -23,8 +24,11 @@ motivation can name the actual product you'd be working on. If the
 posting names a published values framework (Amazon's Leadership Principles, for example),
 the round leans on those principles. The target level is deduced from the posting when it
 states one and asked at the start when it doesn't; it is never silently defaulted, it shapes
-which competencies get emphasis, and the interviewer itself never sees it. A killed session
-resumes where it left off with `sotellme resume`.
+which competencies get emphasis, and the interviewer itself never sees it. When the session
+ends, a grading pass on the smart model reads the whole transcript and scores each answer for
+its STAR structure, specificity, and ownership against your target level, then prints a
+scorecard that names the weak or missing element in each one. A killed session resumes where
+it left off with `sotellme resume`.
 
 ## Running it
 
@@ -61,8 +65,8 @@ and set its key:
 | `openai`       | `OPENAI_API_KEY`    | gpt-5.4-mini / gpt-5.5                    |
 
 The fast slot runs the whole interview side: the CV parser, the company researcher, the
-director, the answer assessor, and the interviewer. The smart slot is reserved for the
-grading and coaching phases. Both are overridable with `SOTELLME_FAST_MODEL` and
+director, the answer assessor, and the interviewer. The smart slot runs the end-of-session
+grader, and coaching will join it next. Both are overridable with `SOTELLME_FAST_MODEL` and
 `SOTELLME_SMART_MODEL` or the matching flags. The eval suites run against `google_genai`
 with an `anthropic` judge; that combo is the recommended one.
 

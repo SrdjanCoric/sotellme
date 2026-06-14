@@ -14,6 +14,7 @@ import sys
 import sotellme.cli as cli
 from sotellme.assessor import AnswerAssessment, StarFlags
 from sotellme.director import DirectorDecision
+from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import default_role_context
 
@@ -65,12 +66,33 @@ class StubInterviewer:
         return "That covers the migration, thanks for walking me through it."
 
 
+def stub_grader(transcript, target_level):
+    return SessionGrade(
+        scores=[
+            AnswerScore(
+                question=turn.question,
+                star=StarFlags(
+                    situation=True, task=True, action=True, result=True, quantified_result=True
+                ),
+                specificity="high",
+                ownership="clear",
+                weak_or_missing=[],
+                gap="",
+                rationale="Complete STAR with a measured outcome at the target level.",
+                score=4,
+            )
+            for turn in transcript
+        ]
+    )
+
+
 cli._build_profile_parser = lambda config: stub_parser
 cli._build_assessor = lambda config: keyword_assessor
 cli._build_director = lambda config: StubDirector()
 cli._build_interviewer = lambda config: StubInterviewer()
 cli._build_role_builder = lambda config: (lambda posting_text: default_role_context())
 cli._build_researcher = lambda config: (lambda posting_text, context: "")
+cli._build_grader = lambda config: stub_grader
 sys.exit(cli.main(sys.argv[1:]))
 """
 
@@ -143,4 +165,5 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
     assert "Acme migration" in resumed.stdout
     assert "what about the action they took" in resumed.stdout
     assert "thanks for walking me through it" in resumed.stdout
+    assert "Scorecard" in resumed.stdout
     assert CLOSING_MESSAGE in resumed.stdout

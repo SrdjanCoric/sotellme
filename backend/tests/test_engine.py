@@ -7,6 +7,7 @@ import pytest
 from sotellme.assessor import AnswerAssessment, StarFlags
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import Director, EngineError, InterviewEngine, RoleBuilder, SessionHandle
+from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import CompetencyWeight, RoleContext, TargetLevel
@@ -111,12 +112,41 @@ def stub_researcher(posting_text: str, context: RoleContext) -> str:
     return BRIEF
 
 
+GRADE = SessionGrade(
+    scores=[
+        AnswerScore(
+            question="Question 1 about their background.",
+            star=StarFlags(
+                situation=True, task=True, action=True, result=True, quantified_result=True
+            ),
+            specificity="high",
+            ownership="clear",
+            weak_or_missing=[],
+            gap="",
+            rationale="Complete STAR with a measured outcome at the target level.",
+            score=4,
+        )
+    ]
+)
+
+
+class RecordingGrader:
+    def __init__(self, grade: SessionGrade = GRADE) -> None:
+        self.grade = grade
+        self.seen: list[tuple[tuple[Turn, ...], TargetLevel]] = []
+
+    def __call__(self, transcript: Sequence[Turn], target_level: TargetLevel) -> SessionGrade:
+        self.seen.append((tuple(transcript), target_level))
+        return self.grade
+
+
 def build_engine(
     data_dir: Path,
     director: Director | None = None,
     interviewer: StubInterviewer | None = None,
     role_builder: RoleBuilder | None = None,
     researcher: object = None,
+    grader: object = None,
     question_cap: int = 20,
     follow_up_cap: int = 6,
 ) -> InterviewEngine:
@@ -128,6 +158,7 @@ def build_engine(
         interviewer=interviewer or StubInterviewer(),
         role_builder=role_builder or builder_returning(acme_context()),
         researcher=researcher or stub_researcher,  # type: ignore[arg-type]
+        grader=grader or RecordingGrader(),  # type: ignore[arg-type]
         question_cap=question_cap,
         follow_up_cap=follow_up_cap,
     )
@@ -212,6 +243,34 @@ def test_a_wrap_up_decision_ends_the_session_with_the_closing_turn(tmp_path: Pat
 
     assert result.finished
     assert result.closing == CLOSING_TURN
+
+
+def test_a_finished_session_carries_the_grade_over_the_real_transcript(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    grader = RecordingGrader()
+    with build_engine(tmp_path / "data", director=director, grader=grader) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+
+    assert result.finished
+    assert result.grade == GRADE
+    seen_transcript, seen_level = grader.seen[0]
+    assert [turn.answer for turn in seen_transcript] == ["A strong, complete story."]
+    assert seen_level == "mid"
+
+
+def test_the_grade_reads_the_session_target_level(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    builder = builder_returning(acme_context(target_level=None))
+    grader = RecordingGrader()
+    with build_engine(
+        tmp_path / "data", director=director, role_builder=builder, grader=grader
+    ) as engine:
+        session = engine.start(write_cv(tmp_path), posting_text=POSTING)
+        session = engine.submit_level(session.thread_id, "senior")
+        engine.submit_answer(session.thread_id, "A strong, complete story.")
+
+    assert grader.seen[0][1] == "senior"
 
 
 def test_a_terminate_decision_also_ends_with_the_closing_turn(tmp_path: Path) -> None:
@@ -480,6 +539,7 @@ def test_profile_survives_resume_without_reparsing(tmp_path: Path) -> None:
         interviewer=StubInterviewer(),
         role_builder=builder_returning(acme_context()),
         researcher=stub_researcher,
+        grader=RecordingGrader(),
     )
     with engine:
         resumed = engine.resume_latest()

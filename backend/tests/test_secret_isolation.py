@@ -11,6 +11,7 @@ from sotellme.assessor import AnswerAssessment, StarFlags
 from sotellme.config import PROVIDER_KEY_VARS
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import InterviewEngine
+from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
 from sotellme.research import build_company_brief
@@ -71,6 +72,10 @@ class StubInterviewer:
         return "That covers it, thanks."
 
 
+def stub_grader(transcript: Sequence[Turn], target_level: str) -> SessionGrade:
+    return SessionGrade(scores=[])
+
+
 def build_isolated_engine(tmp_path: Path, brief: str = "") -> InterviewEngine:
     return InterviewEngine(
         data_dir=tmp_path / "data",
@@ -80,6 +85,7 @@ def build_isolated_engine(tmp_path: Path, brief: str = "") -> InterviewEngine:
         interviewer=StubInterviewer(),
         role_builder=stub_builder,
         researcher=lambda posting, context: brief,
+        grader=stub_grader,
     )
 
 

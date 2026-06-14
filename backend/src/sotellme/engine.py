@@ -24,6 +24,7 @@ from sotellme.coverage import (
 )
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.extraction import extract_cv_text
+from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Project, Role
 from sotellme.role import (
@@ -45,6 +46,8 @@ CHECKPOINTED_TYPES = (
     AnswerAssessment,
     TopicAssessment,
     DirectorDecision,
+    AnswerScore,
+    SessionGrade,
 )
 
 ENVELOPE_WRAP_REASON = "The session envelope is closed; the interview ends here."
@@ -58,6 +61,7 @@ ProfileParser = Callable[[str], CandidateProfile]
 Assessor = Callable[[str, Sequence[Turn]], AnswerAssessment]
 RoleBuilder = Callable[[str], RoleContext]
 Researcher = Callable[[str, RoleContext], str]
+Grader = Callable[[Sequence[Turn], TargetLevel], SessionGrade]
 
 
 class Director(Protocol):
@@ -97,6 +101,7 @@ class InterviewState(TypedDict, total=False):
     current_topic: str
     decision: DirectorDecision
     closing: str
+    grade: SessionGrade
 
 
 class SessionHandle(BaseModel):
@@ -109,6 +114,7 @@ class SessionHandle(BaseModel):
 class TurnResult(BaseModel):
     next_question: str | None = None
     closing: str | None = None
+    grade: SessionGrade | None = None
 
     @property
     def finished(self) -> bool:
@@ -148,6 +154,7 @@ class InterviewEngine:
         interviewer: Interviewer,
         role_builder: RoleBuilder,
         researcher: Researcher,
+        grader: Grader,
         question_cap: int = DEFAULT_QUESTION_CAP,
         follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
         callbacks: list[BaseCallbackHandler] | None = None,
@@ -236,6 +243,13 @@ class InterviewEngine:
         def pose_closing(state: InterviewState) -> InterviewState:
             return {"closing": interviewer.closing_turn(state.get("transcript", []))}
 
+        def grade(state: InterviewState) -> InterviewState:
+            transcript = state.get("transcript", [])
+            if not transcript:
+                return {"grade": SessionGrade(scores=[])}
+            level = state["role_context"].target_level or "mid"
+            return {"grade": grader(transcript, level)}
+
         def route_after_direct(state: InterviewState) -> str:
             if state["decision"].action in ("wrap_up", "terminate"):
                 return "pose_closing"
@@ -253,6 +267,7 @@ class InterviewEngine:
         graph.add_node("await_answer", _await_answer)
         graph.add_node("assess", assess)
         graph.add_node("pose_closing", pose_closing)
+        graph.add_node("grade", grade)
         graph.add_edge(START, "extract")
         graph.add_edge("extract", "parse_profile")
         graph.add_edge("parse_profile", "build_context")
@@ -264,7 +279,8 @@ class InterviewEngine:
         graph.add_edge("pose_question", "await_answer")
         graph.add_edge("await_answer", "assess")
         graph.add_edge("assess", "direct")
-        graph.add_edge("pose_closing", END)
+        graph.add_edge("pose_closing", "grade")
+        graph.add_edge("grade", END)
         serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED_TYPES)
         self._graph = graph.compile(checkpointer=SqliteSaver(self._conn, serde=serde))
 
@@ -295,7 +311,11 @@ class InterviewEngine:
         state = self._graph.get_state(self._config(thread_id))
         if state.next:
             return TurnResult(next_question=state.values["question"])
-        return TurnResult(next_question=None, closing=state.values.get("closing"))
+        return TurnResult(
+            next_question=None,
+            closing=state.values.get("closing"),
+            grade=state.values.get("grade"),
+        )
 
     def close(self) -> None:
         self._conn.close()

@@ -1,0 +1,229 @@
+{
+ "description": "Answers the end-of-session grader must score, each graded against its target level. HUMAN-RECONCILED LABELS (the Phase 5 [verify] task): each label was walked case by case against the grader's rationale; where the grader read the rubric right the label was corrected, where the grader was wrong the label was kept and the grader prompt fixed instead. Each case is one question and one answer in the synthetic candidate's voice (Helioscope / Dunav Logistics). The labels carry the STAR evidence flags, specificity (low/medium/high), ownership (clear/mixed/unclear), the STAR elements left weak or missing, and an overall 1-5 score at the target level; score is checked within +/-1 since it is the most subjective field. The set spans the score range, STAR completeness, the I-vs-we line, leveling mismatches (complete stories that land below their target level), and non-STAR answers (ongoing work, motivation, a clarifying reply) that are graded for what they are, not docked for a Result they never had. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "cases": [
+  {
+   "name": "complete-quantified-single-team-senior",
+   "question": "Tell me about a project you're proud of.",
+   "answer": "At Helioscope our ingestion pipeline ran as a nightly batch, so client dashboards were always hours stale. I was asked to get data latency under two minutes before a big renewal. I led the migration to a streaming pipeline on Kafka, rewrote the Python consumers myself, and ran the old and new paths in parallel for two weeks to prove parity. Data latency dropped from four hours to ninety seconds and we kept the client.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": true},
+    "specificity": "high",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "score": 4
+   },
+   "note": "Complete STAR with a business outcome, but the scope is one team's pipeline; solid for senior, not a 5."
+  },
+  {
+   "name": "cross-team-leadership-senior",
+   "question": "Tell me about a time you drove a change beyond your own team.",
+   "answer": "Three frontend teams at Helioscope were each rebuilding the same UI components and the product looked inconsistent. I drove the case for a shared component library, built buy-in across the teams, and led the implementation while setting up a governance model so it would not rot. Feature work that used to take three sprints started landing in two, and the duplicate code mostly went away. The hard part was getting teams with different needs to agree on one API.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": true},
+    "specificity": "high",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "score": 5
+   },
+   "note": "Cross-team influence, consensus-building, a governance model, a measured delivery gain; a strong senior story."
+  },
+  {
+   "name": "cross-org-standards-staff",
+   "question": "Tell me about the broadest piece of technical leadership you've had.",
+   "answer": "Across three backend teams at Helioscope, every team detected incidents differently and mean time to detect was about thirty minutes. I defined an observability standard, built the first implementation, and drove adoption across the teams, trading off standardization against each team's autonomy. Mean time to detect dropped to under two minutes and teams could debug on their own without waiting on the platform group.",
+   "target_level": "staff",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": true},
+    "specificity": "high",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "score": 5
+   },
+   "note": "Multi-team scope, explicit trade-offs, a measured organizational outcome; lands at staff."
+  },
+  {
+   "name": "missing-result-mid",
+   "question": "Tell me about the berth scheduling work at Dunav.",
+   "answer": "At Dunav Logistics, ships were racking up demurrage fees because berth assignments were done by hand in a spreadsheet. My job was to automate the scheduling. I built a berth-scheduling service in Go that matched vessels to berths by draft and arrival window.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": false, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "clear",
+    "weak_or_missing": ["result", "quantified_result"],
+    "score": 2
+   },
+   "note": "The story stops before any outcome; no Result at all."
+  },
+  {
+   "name": "unquantified-result-mid",
+   "question": "Tell me about the berth scheduling work at Dunav.",
+   "answer": "At Dunav Logistics, ships were racking up demurrage fees because berth assignments were done by hand in a spreadsheet. My job was to automate the scheduling. I built a berth-scheduling service in Go. After it shipped, the fees came down a lot and the operations team was much happier.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "clear",
+    "weak_or_missing": ["quantified_result"],
+    "score": 3
+   },
+   "note": "Whole STAR arc but the result is qualitative; 'came down a lot' needs a number."
+  },
+  {
+   "name": "action-only-fragment-mid",
+   "question": "How did you handle the caching work?",
+   "answer": "I rewrote the consumers and added a Redis cache in front of the database.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": true, "result": false, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "clear",
+    "weak_or_missing": ["situation", "task", "result", "quantified_result"],
+    "score": 2
+   },
+   "note": "A bare action with no setting, problem, or outcome around it."
+  },
+  {
+   "name": "all-we-no-i-senior",
+   "question": "Tell me about the Kubernetes migration.",
+   "answer": "We migrated to Kubernetes and we cut deployment time by ninety percent. We redesigned the pipeline and we handled the rollout across the team. It was a big effort and it went well in the end.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": false, "result": true, "quantified_result": true},
+    "specificity": "medium",
+    "ownership": "unclear",
+    "weak_or_missing": ["situation", "task", "action"],
+    "score": 2
+   },
+   "note": "All 'we', no visible personal contribution; the result is real but the level is impossible to read."
+  },
+  {
+   "name": "claiming-unearned-scope-senior",
+   "question": "Tell me about the architecture work.",
+   "answer": "I redesigned our entire service architecture and the whole platform runs on what I built. It was a huge undertaking and it made everything better across the board.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": true, "result": true, "quantified_result": false},
+    "specificity": "low",
+    "ownership": "clear",
+    "weak_or_missing": ["situation", "task", "quantified_result"],
+    "score": 2
+   },
+   "note": "A grand claim with no specifics, no constraints, no real outcome; reads as overstated scope."
+  },
+  {
+   "name": "all-impact-no-difficulty-senior",
+   "question": "Tell me about a reliability or security improvement you made.",
+   "answer": "I added TLS certificates to our API endpoints, which improved security for around a hundred thousand users. I rolled it out across all of our services and updated the docs so other teams could follow the same pattern.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": true, "result": true, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "clear",
+    "weak_or_missing": ["situation", "task", "quantified_result"],
+    "score": 3
+   },
+   "note": "Complete and quantified but a straightforward task with no real difficulty or trade-offs; lands below senior."
+  },
+  {
+   "name": "all-difficulty-no-impact-senior",
+   "question": "Tell me about the most technically complex thing you've built.",
+   "answer": "I spent about three months building a custom distributed cache with eventual consistency guarantees. The conflict resolution was incredibly hard, with a lot of edge cases around concurrent writes and clock skew that I had to reason through carefully.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": true, "result": false, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "clear",
+    "weak_or_missing": ["situation", "task", "result", "quantified_result"],
+    "score": 2
+   },
+   "note": "Deep complexity but no business problem and no outcome; the overengineering smell."
+  },
+  {
+   "name": "ongoing-concrete-work-mid",
+   "question": "How do you keep AI-generated code from degrading the codebase?",
+   "answer": "I never merge what an assistant writes on trust. I read the whole diff and I'm watching for a few specific things: APIs it invented that don't exist, error handling it quietly dropped, and tests that assert nothing. When I catch one I push back in the same session and have it redo that slice instead of patching over it, and I keep each change small so a bad pattern can't hide in a big diff.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": true, "result": false, "quantified_result": false},
+    "specificity": "high",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "score": 4
+   },
+   "note": "Not a STAR story; ongoing work graded on a concrete account of how they operate, not docked for a missing Result."
+  },
+  {
+   "name": "buzzword-process-answer-mid",
+   "question": "How do you keep AI-generated code from degrading the codebase?",
+   "answer": "I make sure to follow best practices when I use these tools. I keep the architecture clean and the code maintainable, and I always validate the output to a high standard so quality stays where it needs to be.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": true, "result": false, "quantified_result": false},
+    "specificity": "low",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "score": 1
+   },
+   "note": "Generic process talk that names no real practice; nothing concrete to assess."
+  },
+  {
+   "name": "why-us-grounded-senior",
+   "question": "Why do you want to work here?",
+   "answer": "You're building claims-adjudication software for regional health insurers, and I've spent four years on exactly that kind of latency-sensitive data work at Helioscope. The part that pulls me in is that a wrong or slow adjudication is someone's medical bill, so the correctness bar is real, not just an SLA. I'd want to work on the ingestion side where my streaming experience actually transfers.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": false, "result": false, "quantified_result": false},
+    "specificity": "high",
+    "ownership": "not_applicable",
+    "weak_or_missing": [],
+    "score": 4
+   },
+   "note": "A motivation answer, graded on substance not STAR; names the product and ties it to real experience."
+  },
+  {
+   "name": "why-us-generic-senior",
+   "question": "Why do you want to work here?",
+   "answer": "I'm really excited about this opportunity. You're doing impactful work in an interesting space and it seems like a great place to grow my career and work with smart people.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": false, "result": false, "quantified_result": false},
+    "specificity": "low",
+    "ownership": "not_applicable",
+    "weak_or_missing": [],
+    "score": 2
+   },
+   "note": "A motivation answer with no grounding; could be said to any company."
+  },
+  {
+   "name": "short-clarifying-reply-mid",
+   "question": "Did you mean the first migration or the second one?",
+   "answer": "The second one, the Kafka streaming migration in 2023.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": false, "task": false, "action": false, "result": false, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "not_applicable",
+    "weak_or_missing": [],
+    "score": 3
+   },
+   "note": "A short clarifying reply, graded for what it is; not a story, so not docked for missing STAR."
+  },
+  {
+   "name": "solid-mid-story",
+   "question": "Tell me about a time you improved how your team works.",
+   "answer": "On my team's CI the integration tests were flaky and people had stopped trusting them, so failures got rubber-stamped. I was asked to stabilize the suite before our quarterly release. I rewrote the harness to isolate state between runs and added detection that flagged genuinely flaky tests separately from real failures, then documented the patterns for the team. Flaky failures dropped from about fifteen a week to two and people started trusting the suite again.",
+   "target_level": "mid",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": true},
+    "specificity": "high",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "score": 4
+   },
+   "note": "A clean, complete, quantified single-team story; a strong mid answer."
+  }
+ ]
+}
