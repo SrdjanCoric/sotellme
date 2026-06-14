@@ -1,0 +1,189 @@
+from pathlib import Path
+
+from sotellme.catalog import default_catalog
+from sotellme.coach import CoachReport
+from sotellme.config import AgentModel
+from sotellme.engine import SessionHandle, TurnResult
+from sotellme.grader import SessionGrade
+from sotellme.interviewer import Turn
+from sotellme.profile import CandidateProfile, Role
+from sotellme.web import (
+    DEFAULT_CHOICE,
+    LINK_MODE,
+    TEXT_MODE,
+    WebState,
+    agent_overrides_from_selections,
+    chat_messages,
+    clean_posting,
+    default_provider,
+    model_choices,
+    phase_of,
+    posting_to_resolve,
+    save_upload,
+    state_after_answer,
+    state_from_handle,
+)
+
+
+def profile() -> CandidateProfile:
+    return CandidateProfile(
+        roles=[Role(title="Engineer", organization="Acme")],
+        projects=[],
+        quantified_claims=[],
+        technologies=[],
+    )
+
+
+def test_no_state_is_the_setup_phase() -> None:
+    assert phase_of(None) == "setup"
+
+
+def test_a_handle_awaiting_the_level_is_the_level_phase() -> None:
+    handle = SessionHandle(
+        thread_id="t1", question=None, needs_level=True, profile=profile()
+    )
+
+    state = state_from_handle(handle)
+
+    assert phase_of(state) == "level"
+
+
+def test_a_handle_with_the_first_question_is_the_interview_phase() -> None:
+    handle = SessionHandle(
+        thread_id="t1", question="Tell me about a project.", needs_level=False, profile=profile()
+    )
+
+    state = state_from_handle(handle)
+
+    assert phase_of(state) == "interview"
+    assert state.question == "Tell me about a project."
+
+
+def interviewing(question: str) -> WebState:
+    return state_from_handle(
+        SessionHandle(thread_id="t1", question=question, needs_level=False, profile=profile())
+    )
+
+
+def test_answering_a_question_records_the_turn_and_moves_to_the_next() -> None:
+    state = interviewing("Tell me about a project.")
+
+    advanced = state_after_answer(state, "I led the migration.", TurnResult(next_question="Why?"))
+
+    assert phase_of(advanced) == "interview"
+    assert advanced.question == "Why?"
+    assert advanced.answered == [
+        Turn(question="Tell me about a project.", answer="I led the migration.")
+    ]
+
+
+def test_a_finished_turn_reaches_the_report_phase_with_the_results() -> None:
+    state = interviewing("Tell me about a project.")
+    grade = SessionGrade(scores=[])
+    coach = CoachReport(summary="Tighten the result.", answer_advice=[], drills=[], study_plan="")
+    transcript = [Turn(question="Tell me about a project.", answer="I led the migration.")]
+
+    finished = state_after_answer(
+        state,
+        "I led the migration.",
+        TurnResult(
+            next_question=None,
+            closing="Thanks for walking me through it.",
+            grade=grade,
+            coach=coach,
+            transcript=transcript,
+        ),
+    )
+
+    assert phase_of(finished) == "report"
+    assert finished.closing == "Thanks for walking me through it."
+    assert finished.grade is grade
+    assert finished.coach is coach
+    assert finished.transcript == transcript
+
+
+def test_chat_messages_pair_each_answered_turn_then_show_the_open_question() -> None:
+    state = interviewing("Tell me about a project.")
+    advanced = state_after_answer(state, "I led the migration.", TurnResult(next_question="Why?"))
+
+    assert chat_messages(advanced) == [
+        ("assistant", "Tell me about a project."),
+        ("user", "I led the migration."),
+        ("assistant", "Why?"),
+    ]
+
+
+def test_chat_messages_end_on_the_closing_line_when_finished() -> None:
+    state = interviewing("Tell me about a project.")
+    finished = state_after_answer(
+        state,
+        "I led the migration.",
+        TurnResult(next_question=None, closing="Thanks for that.", transcript=[]),
+    )
+
+    assert chat_messages(finished) == [
+        ("assistant", "Tell me about a project."),
+        ("user", "I led the migration."),
+        ("assistant", "Thanks for that."),
+    ]
+
+
+def test_blank_posting_text_becomes_no_posting() -> None:
+    assert clean_posting("   \n  ") is None
+
+
+def test_posting_text_is_trimmed() -> None:
+    assert clean_posting("  We are hiring a backend engineer.  ") == (
+        "We are hiring a backend engineer."
+    )
+
+
+def test_save_upload_writes_the_bytes_keeping_the_suffix(tmp_path: Path) -> None:
+    path = save_upload("my-cv.pdf", b"%PDF-1.4 fake", tmp_path)
+
+    assert path.parent == tmp_path
+    assert path.suffix == ".pdf"
+    assert path.read_bytes() == b"%PDF-1.4 fake"
+
+
+def test_model_choices_lists_every_provider_model_pair() -> None:
+    choices = model_choices(default_catalog())
+
+    assert "anthropic:claude-opus-4-8" in choices
+    assert "openai:gpt-5.5" in choices
+    assert DEFAULT_CHOICE not in choices
+
+
+def test_selections_become_agent_overrides_skipping_defaults() -> None:
+    overrides = agent_overrides_from_selections(
+        {"grader": "openai:gpt-5.5", "coach": DEFAULT_CHOICE}
+    )
+
+    assert overrides == {"grader": AgentModel(provider="openai", model="gpt-5.5")}
+
+
+def test_default_provider_prefers_the_env_selection() -> None:
+    assert default_provider(default_catalog(), {"SOTELLME_PROVIDER": "openai"}) == "openai"
+
+
+def test_default_provider_falls_back_to_a_keyed_provider() -> None:
+    assert default_provider(default_catalog(), {"OPENAI_API_KEY": "k"}) == "openai"
+
+
+def test_default_provider_is_none_without_any_signal() -> None:
+    assert default_provider(default_catalog(), {}) is None
+
+
+def test_a_link_posting_is_marked_for_fetching() -> None:
+    assert posting_to_resolve(LINK_MODE, "https://jobs.example.com/x", "") == (
+        "https://jobs.example.com/x",
+        True,
+    )
+
+
+def test_pasted_posting_text_is_used_as_is() -> None:
+    assert posting_to_resolve(TEXT_MODE, "", "  We are hiring.  ") == ("We are hiring.", False)
+
+
+def test_an_empty_posting_resolves_to_nothing() -> None:
+    assert posting_to_resolve(LINK_MODE, "   ", "ignored") == (None, True)

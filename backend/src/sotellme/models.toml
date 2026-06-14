@@ -1,0 +1,19 @@
+# Default model catalog. Model ids only — never API keys (those live in env vars).
+# Override or extend this by writing ~/.sotellme/models.toml; a [providers.<name>]
+# table there replaces this one for that provider, and an [agents] table assigns a
+# specific provider:model to an individual agent.
+
+[providers.anthropic]
+fast = "claude-sonnet-4-6"
+smart = "claude-opus-4-8"
+models = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
+
+[providers.openai]
+fast = "gpt-5.4-mini"
+smart = "gpt-5.5"
+models = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
+
+[providers.google_genai]
+fast = "gemini-3.1-pro-preview"
+smart = "gemini-3.1-pro-preview"
+models = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.1-flash-lite"]

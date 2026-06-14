@@ -1,0 +1,380 @@
+import os
+import tempfile
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Literal
+
+from langchain_core.callbacks import BaseCallbackHandler
+
+from sotellme.catalog import Catalog, CatalogError, load_catalog
+from sotellme.cli import (
+    NO_COACHING_MESSAGE,
+    TARGET_LEVELS,
+    _data_dir,
+    build_engine,
+    format_score_summary,
+)
+from sotellme.coach import CoachReport
+from sotellme.config import (
+    AGENT_ROLES,
+    PROVIDER_KEY_VARS,
+    AgentModel,
+    ModelConfigError,
+    resolve_model_config,
+)
+from sotellme.engine import EngineError, InterviewEngine, SessionHandle, TurnResult
+from sotellme.grader import SessionGrade
+from sotellme.interviewer import Turn
+from sotellme.posting import PostingInputError, resolve_posting_text
+from sotellme.profile import CandidateProfile
+from sotellme.report import render_report, write_report
+from sotellme.tracing import langfuse_callbacks
+
+DEFAULT_CHOICE = "— provider default —"
+
+LINK_MODE = "Link"
+TEXT_MODE = "Paste text"
+
+Phase = Literal["setup", "level", "interview", "report"]
+
+ChatMessage = tuple[Literal["assistant", "user"], str]
+
+
+@dataclass
+class WebState:
+    thread_id: str
+    profile: CandidateProfile
+    needs_level: bool
+    question: str | None
+    answered: list[Turn] = field(default_factory=list)
+    finished: bool = False
+    closing: str | None = None
+    grade: SessionGrade | None = None
+    coach: CoachReport | None = None
+    transcript: list[Turn] = field(default_factory=list)
+
+
+def state_from_handle(handle: SessionHandle) -> WebState:
+    return WebState(
+        thread_id=handle.thread_id,
+        profile=handle.profile,
+        needs_level=handle.needs_level,
+        question=handle.question,
+    )
+
+
+def state_after_answer(state: WebState, answer: str, result: TurnResult) -> WebState:
+    answered = state.answered
+    if state.question is not None:
+        answered = [*answered, Turn(question=state.question, answer=answer)]
+    return replace(
+        state,
+        needs_level=False,
+        answered=answered,
+        question=result.next_question,
+        finished=result.finished,
+        closing=result.closing,
+        grade=result.grade,
+        coach=result.coach,
+        transcript=list(result.transcript) if result.finished else answered,
+    )
+
+
+def phase_of(state: WebState | None) -> Phase:
+    if state is None:
+        return "setup"
+    if state.needs_level:
+        return "level"
+    if state.question is not None and not state.finished:
+        return "interview"
+    return "report"
+
+
+def model_choices(catalog: Catalog) -> list[str]:
+    return [
+        f"{provider}:{model}"
+        for provider in sorted(catalog.providers)
+        for model in catalog.providers[provider].models
+    ]
+
+
+def agent_overrides_from_selections(selections: Mapping[str, str]) -> dict[str, AgentModel]:
+    overrides: dict[str, AgentModel] = {}
+    for role, choice in selections.items():
+        if choice == DEFAULT_CHOICE:
+            continue
+        provider, _, model = choice.partition(":")
+        overrides[role] = AgentModel(provider=provider, model=model)
+    return overrides
+
+
+def default_provider(catalog: Catalog, env: Mapping[str, str]) -> str | None:
+    chosen = env.get("SOTELLME_PROVIDER")
+    if chosen in catalog.providers:
+        return chosen
+    for provider in sorted(catalog.providers):
+        if env.get(PROVIDER_KEY_VARS.get(provider, "")):
+            return provider
+    return None
+
+
+def clean_posting(raw: str) -> str | None:
+    stripped = raw.strip()
+    return stripped or None
+
+
+def posting_to_resolve(mode: str, url: str, text: str) -> tuple[str | None, bool]:
+    if mode == LINK_MODE:
+        return clean_posting(url), True
+    return clean_posting(text), False
+
+
+def save_upload(name: str, data: bytes, directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, raw_path = tempfile.mkstemp(suffix=Path(name).suffix, dir=directory)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    return Path(raw_path)
+
+
+def chat_messages(state: WebState) -> list[ChatMessage]:
+    messages: list[ChatMessage] = []
+    for turn in state.answered:
+        messages.append(("assistant", turn.question))
+        messages.append(("user", turn.answer))
+    if state.question is not None:
+        messages.append(("assistant", state.question))
+    elif state.closing:
+        messages.append(("assistant", state.closing))
+    return messages
+
+
+class _ModelProgress(BaseCallbackHandler):
+    """Ticks an `st.status` label on each model call so a long wait shows it's working."""
+
+    def __init__(self) -> None:
+        self._status: Any = None
+        self._label = ""
+        self._step = 0
+
+    def aim(self, status: Any, label: str) -> None:
+        self._status = status
+        self._label = label
+        self._step = 0
+
+    def clear(self) -> None:
+        self._status = None
+
+    def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
+        if self._status is None:
+            return
+        self._step += 1
+        try:
+            self._status.update(label=f"{self._label} ({self._step})")
+        except Exception:
+            self._status = None
+
+
+def run() -> None:
+    import streamlit as st
+
+    st.set_page_config(page_title="sotellme", page_icon="🗣️")
+    st.title("sotellme")
+    st.caption("A mock behavioral interview, built from your CV and the job you're chasing.")
+
+    try:
+        catalog = load_catalog(_data_dir())
+    except CatalogError as exc:
+        st.error(str(exc))
+        return
+
+    state = _recover(catalog)
+    if state is None:
+        _render_setup(catalog)
+        return
+    engine = st.session_state.get("engine")
+    if not isinstance(engine, InterviewEngine):
+        st.session_state.pop("state", None)
+        _render_setup(catalog)
+        return
+    phase = phase_of(state)
+    if phase == "level":
+        _render_level(engine, state)
+    elif phase == "interview":
+        _render_interview(engine, state)
+    else:
+        _render_report(state)
+
+
+def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
+    provider = default_provider(catalog, os.environ)
+    if provider is None:
+        return None
+    try:
+        config = resolve_model_config(env=os.environ, provider=provider, catalog=catalog)
+    except ModelConfigError:
+        return None
+    return build_engine(config, langfuse_callbacks(os.environ))
+
+
+def _recover(catalog: Catalog) -> WebState | None:
+    import streamlit as st
+
+    existing = st.session_state.get("state")
+    if isinstance(existing, WebState):
+        return existing
+    engine = _recovery_engine(catalog)
+    if engine is None:
+        return None
+    try:
+        handle = engine.resume_latest()
+    except EngineError:
+        return None
+    st.session_state.engine = engine
+    state = state_from_handle(handle)
+    st.session_state.state = state
+    return state
+
+
+def _render_setup(catalog: Catalog) -> None:
+    import streamlit as st
+
+    st.subheader("Start an interview")
+
+    st.write("Job posting (optional)")
+    posting_mode = st.radio(
+        "Posting source",
+        (LINK_MODE, TEXT_MODE),
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    providers = sorted(catalog.providers)
+    preferred = default_provider(catalog, os.environ)
+    selections: dict[str, str] = {}
+    with st.form("setup", border=False):
+        cv_file = st.file_uploader("Your CV", type=["pdf", "md", "markdown", "txt"])
+        posting_url = ""
+        posting_text = ""
+        if posting_mode == LINK_MODE:
+            posting_url = st.text_input("Posting link", placeholder="https://…")
+        else:
+            posting_text = st.text_area("Posting text", placeholder="Paste the posting text…")
+        provider = st.selectbox(
+            "Provider",
+            providers,
+            index=providers.index(preferred) if preferred in providers else 0,
+        )
+        with st.expander("Advanced: choose a model per step"):
+            st.caption("Leave a step on its provider default, or pin it to a catalog model.")
+            choices = [DEFAULT_CHOICE, *model_choices(catalog)]
+            for role in AGENT_ROLES:
+                selections[role] = st.selectbox(
+                    role.replace("_", " "), choices, key=f"agent_{role}"
+                )
+        submitted = st.form_submit_button("Start interview", type="primary")
+
+    if not submitted:
+        return
+    if cv_file is None:
+        st.error("Upload your CV to start.")
+        return
+    try:
+        config = resolve_model_config(
+            env=os.environ,
+            provider=provider,
+            catalog=catalog,
+            agent_overrides=agent_overrides_from_selections(selections),
+        )
+    except ModelConfigError as exc:
+        st.error(str(exc))
+        return
+    value, needs_fetch = posting_to_resolve(posting_mode, posting_url, posting_text)
+    resolved_posting: str | None = value
+    if value is not None and needs_fetch:
+        try:
+            with st.spinner("Reading the posting…"):
+                resolved_posting = resolve_posting_text(value)
+        except PostingInputError as exc:
+            st.error(str(exc))
+            return
+    progress = _ModelProgress()
+    engine = build_engine(config, [*langfuse_callbacks(os.environ), progress])
+    st.session_state.progress = progress
+    cv_path = save_upload(cv_file.name, cv_file.getvalue(), _upload_dir())
+    with st.status("Reading your CV and researching the role…") as status:
+        progress.aim(status, "Reading your CV and researching the role")
+        handle = engine.start(cv_path, posting_text=resolved_posting)
+        progress.clear()
+    st.session_state.engine = engine
+    st.session_state.state = state_from_handle(handle)
+    st.rerun()
+
+
+def _render_level(engine: InterviewEngine, state: WebState) -> None:
+    import streamlit as st
+
+    st.info("This posting doesn't state a level. What level is this interview for?")
+    level = st.selectbox("Target level", TARGET_LEVELS, format_func=str.capitalize)
+    if st.button("Continue", type="primary"):
+        with st.status("Setting up the interview…") as status:
+            _aim_progress(status, "Setting up the interview")
+            handle = engine.submit_level(state.thread_id, level)
+        st.session_state.state = state_from_handle(handle)
+        st.rerun()
+
+
+def _render_interview(engine: InterviewEngine, state: WebState) -> None:
+    import streamlit as st
+
+    for role, content in chat_messages(state):
+        st.chat_message(role).write(content)
+    answer = st.chat_input("Your answer")
+    if answer:
+        with st.status("Thinking…") as status:
+            _aim_progress(status, "Thinking")
+            result = engine.submit_answer(state.thread_id, answer)
+        st.session_state.state = state_after_answer(state, answer, result)
+        st.rerun()
+
+
+def _aim_progress(status: Any, label: str) -> None:
+    import streamlit as st
+
+    progress = st.session_state.get("progress")
+    if isinstance(progress, _ModelProgress):
+        progress.aim(status, label)
+
+
+def _render_report(state: WebState) -> None:
+    import streamlit as st
+
+    for role, content in chat_messages(state):
+        st.chat_message(role).write(content)
+    grade = state.grade
+    coach = state.coach
+    if coach is not None and grade is not None and grade.scores:
+        st.subheader("Scorecard")
+        st.text(format_score_summary(grade))
+        if "report_path" not in st.session_state:
+            st.session_state.report_path = write_report(
+                coach, state.transcript, Path.cwd(), datetime.now()
+            )
+        st.markdown(render_report(coach, state.transcript))
+        st.caption(f"Saved your full report to {st.session_state.report_path}")
+    else:
+        st.info(NO_COACHING_MESSAGE)
+    if st.button("Start another interview"):
+        for key in ("state", "report_path"):
+            st.session_state.pop(key, None)
+        st.rerun()
+
+
+def _upload_dir() -> Path:
+    return Path(tempfile.gettempdir())
+
+
+if __name__ == "__main__":
+    run()

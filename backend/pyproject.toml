@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tracing = ["langfuse>=3.0"]
+web = ["streamlit>=1.40"]
 
 [project.scripts]
 sotellme = "sotellme.cli:main"
@@ -54,4 +55,8 @@ testpaths = ["tests"]
 
 [[tool.mypy.overrides]]
 module = "langfuse.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "streamlit.*"
 ignore_missing_imports = true

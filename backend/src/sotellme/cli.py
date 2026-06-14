@@ -1,11 +1,14 @@
 import argparse
+import importlib.util
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
+from langchain_core.callbacks import BaseCallbackHandler
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
@@ -13,6 +16,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from sotellme.assessor import AssessorError, assess_answer
+from sotellme.catalog import CatalogError, load_catalog
 from sotellme.coach import CoachingError, CoachReport, coach_session
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
 from sotellme.director import DirectorError, LLMDirector
@@ -220,6 +224,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     subcommands.add_parser("reports", help="List the coaching reports in this directory.")
 
+    subcommands.add_parser("web", help="Launch the local web UI in your browser.")
+
     grade = subcommands.add_parser(
         "grade", help="Grade a saved transcript without running a live interview."
     )
@@ -248,30 +254,30 @@ def _data_dir() -> Path:
 
 
 def _build_profile_parser(config: ModelConfig) -> ProfileParser:
-    model = build_chat_model(config, "fast")
+    model = build_chat_model(config, "parser")
     return lambda cv_text: parse_candidate_profile(cv_text, model)
 
 
 def _build_assessor(config: ModelConfig) -> Assessor:
-    model = build_chat_model(config, "fast")
+    model = build_chat_model(config, "assessor")
     return lambda topic, transcript: assess_answer(topic, transcript, model)
 
 
 def _build_director(config: ModelConfig) -> Director:
-    return LLMDirector(build_chat_model(config, "fast"))
+    return LLMDirector(build_chat_model(config, "director"))
 
 
 def _build_interviewer(config: ModelConfig) -> Interviewer:
-    return LLMInterviewer(build_chat_model(config, "fast"))
+    return LLMInterviewer(build_chat_model(config, "interviewer"))
 
 
 def _build_role_builder(config: ModelConfig) -> RoleBuilder:
-    model = build_chat_model(config, "fast")
+    model = build_chat_model(config, "role_builder")
     return lambda posting_text: build_role_context(posting_text, model)
 
 
 def _build_researcher(config: ModelConfig) -> Researcher:
-    model = build_chat_model(config, "fast")
+    model = build_chat_model(config, "researcher")
 
     def research(posting_text: str, context: RoleContext) -> str:
         return build_company_brief(posting_text, context, model, fetch_research_page)
@@ -280,15 +286,62 @@ def _build_researcher(config: ModelConfig) -> Researcher:
 
 
 def _build_grader(config: ModelConfig) -> Grader:
-    model = build_chat_model(config, "smart")
+    model = build_chat_model(config, "grader")
     return lambda transcript, target_level: grade_session(transcript, target_level, model)
 
 
 def _build_coacher(config: ModelConfig) -> Coacher:
-    model = build_chat_model(config, "smart")
+    model = build_chat_model(config, "coach")
     return lambda transcript, grade, target_level: coach_session(
         transcript, grade, target_level, model
     )
+
+
+def build_engine(
+    config: ModelConfig, callbacks: list[BaseCallbackHandler]
+) -> InterviewEngine:
+    return InterviewEngine(
+        data_dir=_data_dir(),
+        profile_parser=_build_profile_parser(config),
+        assessor=_build_assessor(config),
+        director=_build_director(config),
+        interviewer=_build_interviewer(config),
+        role_builder=_build_role_builder(config),
+        researcher=_build_researcher(config),
+        grader=_build_grader(config),
+        coacher=_build_coacher(config),
+        callbacks=callbacks,
+    )
+
+
+WEB_EXTRA_HINT = (
+    "The web UI needs Streamlit, which isn't installed. Install the web extra:\n"
+    "    uv sync --extra web\n"
+    "or:\n"
+    "    pip install 'sotellme[web]'"
+)
+
+
+WEB_ACCENT_COLOR = "#4f6d7a"
+
+
+def streamlit_run_command(web_module: Path, executable: str) -> list[str]:
+    return [
+        executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(web_module),
+        f"--theme.primaryColor={WEB_ACCENT_COLOR}",
+    ]
+
+
+def _run_web(console: Console) -> int:
+    if importlib.util.find_spec("streamlit") is None:
+        console.print(WEB_EXTRA_HINT, style="red", markup=False)
+        return 1
+    web_module = Path(__file__).with_name("web.py")
+    return subprocess.call(streamlit_run_command(web_module, sys.executable))
 
 
 def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
@@ -345,7 +398,7 @@ def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_
     except OSError as exc:
         raise TranscriptInputError(f"Could not read the transcript file: {exc}") from exc
     transcript = parse_transcript(text)
-    model = build_chat_model(config, "smart")
+    model = build_chat_model(config, "grader")
     with console.status("Grading the transcript..."):
         grade = grade_session(transcript, level, model)
     console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
@@ -361,12 +414,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "reports":
         _run_reports(console)
         return 0
+    if args.command == "web":
+        return _run_web(console)
     try:
         config = resolve_model_config(
             env=os.environ,
             provider=args.provider,
             fast_model=args.fast_model,
             smart_model=args.smart_model,
+            catalog=load_catalog(_data_dir()),
         )
         if args.command == "grade":
             _run_grade(console, config, args.transcript, args.level)
@@ -375,18 +431,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "interview" and args.job:
             posting_text = resolve_posting_text(args.job)
         callbacks = langfuse_callbacks(os.environ)
-        engine = InterviewEngine(
-            data_dir=_data_dir(),
-            profile_parser=_build_profile_parser(config),
-            assessor=_build_assessor(config),
-            director=_build_director(config),
-            interviewer=_build_interviewer(config),
-            role_builder=_build_role_builder(config),
-            researcher=_build_researcher(config),
-            grader=_build_grader(config),
-            coacher=_build_coacher(config),
-            callbacks=callbacks,
-        )
+        engine = build_engine(config, callbacks)
         with engine:
             if args.command == "interview":
                 status = (
@@ -401,6 +446,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _run_session(console, engine, session)
     except (
         ModelConfigError,
+        CatalogError,
         CVInputError,
         PostingInputError,
         ProfileParseError,
