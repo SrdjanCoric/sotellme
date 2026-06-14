@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -28,7 +29,7 @@ from sotellme.engine import (
 from sotellme.extraction import CVInputError
 from sotellme.fetch import fetch_research_page
 from sotellme.grader import GradingError, SessionGrade, grade_session
-from sotellme.interviewer import LLMInterviewer
+from sotellme.interviewer import LLMInterviewer, Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import ProfileParseError, parse_candidate_profile
 from sotellme.research import build_company_brief
@@ -115,6 +116,37 @@ def strip_done_sentinel(text: str) -> str:
     return "\n".join(lines)
 
 
+class TranscriptInputError(Exception):
+    pass
+
+
+def parse_transcript(text: str) -> list[Turn]:
+    try:
+        document = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise TranscriptInputError(
+            "The transcript file is not valid JSON. Expected a list of "
+            '{"question": ..., "answer": ...} objects.'
+        ) from exc
+    if not isinstance(document, list) or not document:
+        raise TranscriptInputError(
+            "The transcript must be a non-empty JSON list of "
+            '{"question": ..., "answer": ...} objects.'
+        )
+    turns: list[Turn] = []
+    for index, entry in enumerate(document, start=1):
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("question"), str)
+            or not isinstance(entry.get("answer"), str)
+        ):
+            raise TranscriptInputError(
+                f"Turn {index} must have a string 'question' and a string 'answer'."
+            )
+        turns.append(Turn(question=entry["question"], answer=entry["answer"]))
+    return turns
+
+
 def read_multiline_answer(read_line: Callable[[], str]) -> str:
     lines: list[str] = []
     while True:
@@ -173,6 +205,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume = subcommands.add_parser("resume", help="Resume the latest interrupted session.")
     _add_model_flags(resume)
+
+    grade = subcommands.add_parser(
+        "grade", help="Grade a saved transcript without running a live interview."
+    )
+    grade.add_argument(
+        "transcript",
+        help='Path to a JSON file: a list of {"question": ..., "answer": ...} objects.',
+    )
+    grade.add_argument(
+        "--level",
+        required=True,
+        help="Target level to grade against: junior, mid, senior, or staff.",
+    )
+    _add_model_flags(grade)
 
     return parser
 
@@ -257,6 +303,23 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
     console.print(f"\n[dim]{CLOSING_MESSAGE}[/dim]")
 
 
+def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_level: str) -> None:
+    level = parse_target_level(raw_level)
+    if level is None:
+        raise TranscriptInputError(
+            f"'{raw_level}' is not a level. Use junior, mid, senior, or staff."
+        )
+    try:
+        text = Path(transcript_path).read_text()
+    except OSError as exc:
+        raise TranscriptInputError(f"Could not read the transcript file: {exc}") from exc
+    transcript = parse_transcript(text)
+    model = build_chat_model(config, "smart")
+    with console.status("Grading the transcript..."):
+        grade = grade_session(transcript, level, model)
+    console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     console = Console()
@@ -267,6 +330,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             fast_model=args.fast_model,
             smart_model=args.smart_model,
         )
+        if args.command == "grade":
+            _run_grade(console, config, args.transcript, args.level)
+            return 0
         posting_text = None
         if args.command == "interview" and args.job:
             posting_text = resolve_posting_text(args.job)
@@ -303,6 +369,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         AssessorError,
         DirectorError,
         GradingError,
+        TranscriptInputError,
         EngineError,
         TracingError,
     ) as exc:

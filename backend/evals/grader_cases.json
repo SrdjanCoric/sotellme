@@ -224,6 +224,69 @@
     "score": 4
    },
    "note": "A clean, complete, quantified single-team story; a strong mid answer."
+  },
+  {
+   "name": "coding-school-small-team-end-to-end-ownership-senior-session",
+   "target_level": "senior",
+   "note": "A real small-company session graded at senior, scrubbed (the employer is renamed Coding School and the hiring company Hostshield; public tools and the job domain are kept verbatim). This is the session that surfaced the senior-vs-staff scope miscalibration: the candidate owns a 3-person team's whole system end to end with no other team to cross, so the old rubric capped strong, quantified, owned answers at 2-3 for lacking cross-team scope. The whole transcript is graded in one pass, the way the grader sees a finished session. ASSERTIONS (PROPOSED, pending the human reconciliation in the Phase 5b [verify]): senior_floor_turns must each score at least 4 - turn 2 is a complete, quantified, proactively-proposed grading feature; turn 3 is the clear first-person evals work that kept its accuracy. senior_ceiling_turns must each score at most 3, so the re-anchor still discriminates - turn 1 is a thin traits-only opener, turn 8 a deflected failure answer that lands on a minor bug. Turn indices are 1-based.",
+   "senior_floor_turns": [
+    2,
+    3
+   ],
+   "senior_ceiling_turns": [
+    1,
+    8
+   ],
+   "turns": [
+    {
+     "question": "You've been at Coding School since 2017, building everything from a real-time REPL system to an AI chatbot for students. What would you say is the common thread running through the work you gravitate toward?",
+     "answer": "So there are many:\n- One of the things is just-in-time learning, which is just-in-time learning. I've been able to pick up skills very quickly and apply them to my workflow.\n- Ownership: I tend to propose features that should be implemented, and instead of just grabbing tickets, I like to figure out what needs to be implemented and then take ownership of implementing that to improve our product. I have examples of that if necessary."
+    },
+    {
+     "question": "I would like to hear one of those examples. What was a specific feature you proposed at Coding School instead of waiting for a ticket?",
+     "answer": "One of the features was implementing grading of written assessments by a chatbot. Historically, TAs were grading these assessments, which was expensive because a TA's time is like 30-40 hours, not 30-40 per hour. Also, it was slow, so students would have to wait hours, sometimes even 24 hours, to get the grade. What we did is we allowed the implementation of a chatbot, a feature of a chatbot that can grade written assessments. This reduced the time from waiting for a couple of hours or even a day to just two minutes on average. Also, the cost of grading was less than $1, because that's the cost of the LLM. The cost and time were reduced while the accuracy of the grading remained, on average, very very similar, with up to a 2-5% difference"
+    },
+    {
+     "question": "Got it. When it came time to build that grading feature, what did you personally do technically to ensure its accuracy stayed so close to the human TAs?",
+     "answer": "Yes, I created a dataset of previous assessments that were taken by students, and then I ran evals using Braintrust app and compared the score of LLM versus TA. If the score didn't match for some questions, what I did is I created grading guidelines, and we ran the datasets until the results were within the benchmark of a 2-5% difference."
+    },
+    {
+     "question": "Looking at your work on the Coding School platform, you architected a full-stack REPL system. What problem was that built to solve?",
+     "answer": "The problem is that we have a lot of beginner students that are at the beginning of their software engineering career. Setting up all of that code editor and everything else can be challenging. What we wanted to allow them to do is code in our own platform. When they're solving different exercises in various languages like TypeScript, Python, Ruby, JavaScript, and SQL, we wanted them to be able to run the code in our own platform, and that was repl4."
+    },
+    {
+     "question": "Got it. When you were building repl4, how did you set up the backend to safely execute that arbitrary student code and stream the results back to them?",
+     "answer": "Yeah, so we deploy the piston API, which runs the code on an EC2 instance on AWS. The piston API runs the code in the container, so in the container as environments. That makes sure that the code, even if it's malicious, can only break that particular container. It cannot do anything to the EC2 instance. In terms of communication between rails and our piston API, we have a web socket connection, and the same from the browser to the rails app. The rails app is sending the response through an sse connection."
+    },
+    {
+     "question": "Okay, that handles the security side of the container. How did you manage resource limits to make sure a student's infinite loop or memory spike didn't drag down the rest of that EC2 instance?",
+     "answer": "We have set up a memory limit for each container, which fixes the container limit but doesn't prevent people running many jobs at the same time, which will tear down the EC2 instance. What we did is we added rate limiting on NGINX, only allowing requests from our Coding School application and limiting the amount of jobs that can be done at the same time, which protects the EC2 instance."
+    },
+    {
+     "question": "Okay, that makes sense for protecting the instance. If NGINX limits the amount of jobs running at the same time, what actually happens to a student's request when they hit run while the system is already at capacity?",
+     "answer": "Given the amount of students that we have and given that the code is running by our students, where subscribed students that we can ban if they abuse the app. This is unlikely to happen, or if it happens, once the student would be banned again. This is for subscribed students. If we are talking about unsubscribed students, we would ban their IP, but in the unlikely case that the rate limiting is hit, our students would have to retry."
+    },
+    {
+     "question": "You mentioned earlier that you like to propose and own features rather than just grabbing tickets. What's a time when one of those projects didn't go the way you planned?",
+     "answer": "There wasn't time. I don't want to make things up. Sometimes my proposals were rejected, which is a different case, but when they were accepted, they were implemented. You could say that not going according to plan is sometimes having minor production issues, especially with UX or UI, which happened in the REPL. Some minor issues: basically, what we have is a vertical dragger that you can move left and right and make the REPL the whole screen or make the assignment or the exercise the whole screen if you want. There was a bug there in mobile applications, but that was fixed, so you could say that that was not going according to plan, because according to plan everything works, but that was a minor thing that was fixed."
+    },
+    {
+     "question": "You mentioned earlier that sometimes your proposals were rejected. What was one specific feature you pitched at Coding School that got turned down?",
+     "answer": "I've proposed we add a browser extension so that students can potentially hook up with different projects like Odin, and we could embed their data because it's public and help their students as well with our chatbot, but that feature was rejected."
+    },
+    {
+     "question": "Got it. When you pitched that browser extension for projects like Odin, what reasons did they give for turning it down?",
+     "answer": "We are a very small team and very open in our communications. If my boss, in this case, tells me they just are not interested in pursuing that at the moment, maybe not due to them wanting to do other things with the resources that we have, we are a small team. They wanted me on different tasks, and those tasks were, at the moment, working on integrating books into our chatbot and also improving and enhancing our capstone experience, so just different priorities."
+    },
+    {
+     "question": "Fair enough. Out of everywhere you could take your engineering career next, why Hostshield and our focus on isolating tenants and enforcing resource limits to improve uptime in shared hosting environments?",
+     "answer": "I believe the job posting attracted me because you're looking for a product engineer with AI experience using AI tools. I've been using these tools for the past couple of years, starting with just browser, ChatGPT, and Claude, then moving to Cursor. When Claude Code was released and Opus 4.5 was released, I moved to Claude Code. I do think that using these tools is the future of engineering. Also, this is a new area for me. I love new challenges and new problems, and I like to solve them. Even though I haven't worked with Hostshield and isolating tenants, that space does provide very interesting problems that can be solved, and I am looking forward to helping solve them."
+    },
+    {
+     "question": "You said the shared hosting space presents interesting problems even though it's new to you. How do you imagine things like rebootless kernel patching or automated caching actually help a web hosting provider lower their technical support load?",
+     "answer": "So pretty straightforward. Whenever we have a security call, you need to patch your kernel, but that would mean the whole host will be down. The old server will be down, which means all websites that are hosted on that server would be down. Now, if you can do it rebootless, like you don't have to reboot the kernel to make that patch, that would mean the sites will be live, so you don't have to schedule downtime. That's one thing for caching. Caching speeds everything up and uses less resources, and you want to cache things so you don't use those resources. Now, automatic caching means that users don't have to call you to set up caching, but it's done automatically, so that reduces the technical support."
+    }
+   ]
   }
  ]
 }

@@ -1,9 +1,13 @@
+import pytest
+
 from sotellme.assessor import StarFlags
 from sotellme.cli import (
+    TranscriptInputError,
     ask_target_level,
     build_parser,
     format_score_summary,
     parse_target_level,
+    parse_transcript,
     read_multiline_answer,
     strip_done_sentinel,
 )
@@ -117,6 +121,47 @@ def test_resume_command_parses() -> None:
     args = build_parser().parse_args(["resume"])
 
     assert args.command == "resume"
+
+
+def test_grade_command_parses_transcript_level_and_model_flags() -> None:
+    args = build_parser().parse_args(
+        ["grade", "session.json", "--level", "senior", "--provider", "anthropic"]
+    )
+
+    assert args.command == "grade"
+    assert args.transcript == "session.json"
+    assert args.level == "senior"
+    assert args.provider == "anthropic"
+
+
+def test_parse_transcript_reads_question_answer_pairs_in_order() -> None:
+    turns = parse_transcript(
+        '[{"question": "Tell me about a project.", "answer": "I led the migration."},'
+        ' {"question": "What was hard?", "answer": "The data parity."}]'
+    )
+
+    assert [turn.question for turn in turns] == ["Tell me about a project.", "What was hard?"]
+    assert turns[0].answer == "I led the migration."
+
+
+def test_parse_transcript_rejects_malformed_json() -> None:
+    with pytest.raises(TranscriptInputError):
+        parse_transcript("not json at all")
+
+
+def test_parse_transcript_rejects_a_non_list_document() -> None:
+    with pytest.raises(TranscriptInputError):
+        parse_transcript('{"question": "q", "answer": "a"}')
+
+
+def test_parse_transcript_rejects_a_turn_missing_a_field() -> None:
+    with pytest.raises(TranscriptInputError):
+        parse_transcript('[{"question": "q"}]')
+
+
+def test_parse_transcript_rejects_an_empty_transcript() -> None:
+    with pytest.raises(TranscriptInputError):
+        parse_transcript("[]")
 
 
 def test_score_summary_lists_each_answer_with_its_score_and_named_gaps() -> None:
