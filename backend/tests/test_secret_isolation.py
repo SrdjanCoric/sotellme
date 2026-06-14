@@ -8,6 +8,7 @@ from stubs import ToolLoopStubModel
 
 import sotellme.prompts
 from sotellme.assessor import AnswerAssessment, StarFlags
+from sotellme.coach import CoachReport
 from sotellme.config import PROVIDER_KEY_VARS
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import InterviewEngine
@@ -76,6 +77,10 @@ def stub_grader(transcript: Sequence[Turn], target_level: str) -> SessionGrade:
     return SessionGrade(scores=[])
 
 
+def stub_coacher(transcript: Sequence[Turn], grade: SessionGrade, target_level: str) -> CoachReport:
+    return CoachReport(summary="", answer_advice=[], drills=[], study_plan="")
+
+
 def build_isolated_engine(tmp_path: Path, brief: str = "") -> InterviewEngine:
     return InterviewEngine(
         data_dir=tmp_path / "data",
@@ -86,6 +91,7 @@ def build_isolated_engine(tmp_path: Path, brief: str = "") -> InterviewEngine:
         role_builder=stub_builder,
         researcher=lambda posting, context: brief,
         grader=stub_grader,
+        coacher=stub_coacher,
     )
 
 

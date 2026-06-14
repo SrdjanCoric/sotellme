@@ -1,0 +1,80 @@
+{
+ "description": "Synthetic coaching cases (stopgap until volunteered sessions land). Each case feeds the coach a transcript plus an authored grade with one planted weakness, and the judge checks the coach's fix is tied to that named gap rather than generic filler.",
+ "cases": [
+  {
+   "name": "missing-quantified-result-senior",
+   "target_level": "senior",
+   "transcript": [
+    {
+     "question": "Tell me about a project you're proud of.",
+     "answer": "At Northwind our checkout service kept timing out under load before big sales. I owned the fix end to end: I profiled the hot path, found the synchronous inventory call, and rewrote it as an async batch with a fallback cache. I rolled it out behind a flag and watched it through two sale weekends."
+    }
+   ],
+   "grade": {
+    "scores": [
+     {
+      "question": "Tell me about a project you're proud of.",
+      "rationale": "Clear end-to-end ownership at senior, concrete actions, but the story stops before any measured outcome.",
+      "star": {"situation": true, "task": true, "action": true, "result": false, "quantified_result": false},
+      "specificity": "high",
+      "ownership": "clear",
+      "weak_or_missing": ["result", "quantified_result"],
+      "gap": "The story never says how the checkout fix turned out; no latency or error-rate change is stated.",
+      "score": 3
+     }
+    ]
+   },
+   "gap_summary": "The answer describes the work in detail but never states the outcome: no number for the latency, timeout rate, or sales impact after the change."
+  },
+  {
+   "name": "blurred-ownership-we-throughout-senior",
+   "target_level": "senior",
+   "transcript": [
+    {
+     "question": "Tell me about a hard technical decision you were part of.",
+     "answer": "We were drowning in flaky integration tests, so we decided to split the suite and run it in parallel. We containerised the dependencies, we added retries for the genuinely network-bound cases, and we got the suite back under ten minutes. The whole team was a lot happier after that."
+    }
+   ],
+   "grade": {
+    "scores": [
+     {
+      "question": "Tell me about a hard technical decision you were part of.",
+      "rationale": "A real outcome with a number, but it is all 'we'; nothing marks what this candidate personally drove, which a senior answer needs.",
+      "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": true},
+      "specificity": "high",
+      "ownership": "unclear",
+      "weak_or_missing": [],
+      "gap": "The answer is all 'we' with no personal contribution visible; it never says what the candidate themselves decided or built.",
+      "score": 3
+     }
+    ]
+   },
+   "gap_summary": "Every action is credited to the team as 'we'; the answer never separates out what this candidate personally decided, drove, or built."
+  },
+  {
+   "name": "vague-low-specificity-mid",
+   "target_level": "mid",
+   "transcript": [
+    {
+     "question": "Walk me through a time you improved something on your team.",
+     "answer": "I noticed our process wasn't great, so I made some changes that helped a lot. Things got way better and smoother, people were happier, and overall it was a big improvement for everyone involved."
+    }
+   ],
+   "grade": {
+    "scores": [
+     {
+      "question": "Walk me through a time you improved something on your team.",
+      "rationale": "Nothing concrete: no named process, no specific change, no real outcome. Pure vague betterment.",
+      "star": {"situation": false, "task": false, "action": true, "result": true, "quantified_result": false},
+      "specificity": "low",
+      "ownership": "clear",
+      "weak_or_missing": ["situation", "task", "quantified_result"],
+      "gap": "Nothing in the answer is concrete: it never names the process, the change, or any measurable result.",
+      "score": 2
+     }
+    ]
+   },
+   "gap_summary": "The answer leans entirely on vague words ('helped a lot', 'way better', 'big improvement') and never names the process, the specific change made, or a concrete result."
+  }
+ ]
+}

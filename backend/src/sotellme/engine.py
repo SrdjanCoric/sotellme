@@ -15,6 +15,7 @@ from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
 from sotellme.assessor import AnswerAssessment, StarFlags, TopicAssessment
+from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.coverage import (
     DEFAULT_FOLLOW_UP_CAP,
     DEFAULT_QUESTION_CAP,
@@ -48,6 +49,9 @@ CHECKPOINTED_TYPES = (
     DirectorDecision,
     AnswerScore,
     SessionGrade,
+    AnswerAdvice,
+    Drill,
+    CoachReport,
 )
 
 ENVELOPE_WRAP_REASON = "The session envelope is closed; the interview ends here."
@@ -62,6 +66,7 @@ Assessor = Callable[[str, Sequence[Turn]], AnswerAssessment]
 RoleBuilder = Callable[[str], RoleContext]
 Researcher = Callable[[str, RoleContext], str]
 Grader = Callable[[Sequence[Turn], TargetLevel], SessionGrade]
+Coacher = Callable[[Sequence[Turn], SessionGrade, TargetLevel], CoachReport]
 
 
 class Director(Protocol):
@@ -102,6 +107,7 @@ class InterviewState(TypedDict, total=False):
     decision: DirectorDecision
     closing: str
     grade: SessionGrade
+    coach: CoachReport
 
 
 class SessionHandle(BaseModel):
@@ -115,6 +121,7 @@ class TurnResult(BaseModel):
     next_question: str | None = None
     closing: str | None = None
     grade: SessionGrade | None = None
+    coach: CoachReport | None = None
 
     @property
     def finished(self) -> bool:
@@ -155,6 +162,7 @@ class InterviewEngine:
         role_builder: RoleBuilder,
         researcher: Researcher,
         grader: Grader,
+        coacher: Coacher,
         question_cap: int = DEFAULT_QUESTION_CAP,
         follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
         callbacks: list[BaseCallbackHandler] | None = None,
@@ -250,6 +258,10 @@ class InterviewEngine:
             level = state["role_context"].target_level or "mid"
             return {"grade": grader(transcript, level)}
 
+        def coach(state: InterviewState) -> InterviewState:
+            level = state["role_context"].target_level or "mid"
+            return {"coach": coacher(state.get("transcript", []), state["grade"], level)}
+
         def route_after_direct(state: InterviewState) -> str:
             if state["decision"].action in ("wrap_up", "terminate"):
                 return "pose_closing"
@@ -268,6 +280,7 @@ class InterviewEngine:
         graph.add_node("assess", assess)
         graph.add_node("pose_closing", pose_closing)
         graph.add_node("grade", grade)
+        graph.add_node("coach", coach)
         graph.add_edge(START, "extract")
         graph.add_edge("extract", "parse_profile")
         graph.add_edge("parse_profile", "build_context")
@@ -280,7 +293,8 @@ class InterviewEngine:
         graph.add_edge("await_answer", "assess")
         graph.add_edge("assess", "direct")
         graph.add_edge("pose_closing", "grade")
-        graph.add_edge("grade", END)
+        graph.add_edge("grade", "coach")
+        graph.add_edge("coach", END)
         serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED_TYPES)
         self._graph = graph.compile(checkpointer=SqliteSaver(self._conn, serde=serde))
 
@@ -315,6 +329,7 @@ class InterviewEngine:
             next_question=None,
             closing=state.values.get("closing"),
             grade=state.values.get("grade"),
+            coach=state.values.get("coach"),
         )
 
     def close(self) -> None:
