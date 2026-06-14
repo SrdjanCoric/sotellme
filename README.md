@@ -3,8 +3,9 @@
 A mock behavioral interviewer that runs in your terminal. You hand it your CV and a job
 posting; it researches the company, then runs an interview grounded in what your CV actually
 claims and in what the company actually makes. When the interview ends it grades every answer
-and prints a scorecard; the coaching report that turns those scores into advice is the next
-phase on the plan.
+and prints a scorecard, then coaches you on the weak ones: what specifically held each answer
+back, and how to fix it next time. Writing all of that to a report file is the next phase on
+the plan.
 
 An LLM interview director runs the session the way a trained interviewer would: it opens by
 asking who you are, digs into your most significant work, picks a few targeted stories to
@@ -27,8 +28,11 @@ states one and asked at the start when it doesn't; it is never silently defaulte
 which competencies get emphasis, and the interviewer itself never sees it. When the session
 ends, a grading pass on the smart model reads the whole transcript and scores each answer for
 its STAR structure, specificity, and ownership against your target level, then prints a
-scorecard that names the weak or missing element in each one. A killed session resumes where
-it left off with `sotellme resume`.
+scorecard that names the weak or missing element in each one. A coach reads those scores and
+the transcript and turns them into advice: for each weak answer, what held it back and the
+concrete fix, plus drills for the patterns it sees across the session and a short study plan.
+That advice prints to the terminal for now; writing it to a report file is the next phase. A
+killed session resumes where it left off with `sotellme resume`.
 
 ## Running it
 
@@ -70,7 +74,7 @@ and set its key:
 
 The fast slot runs the whole interview side: the CV parser, the company researcher, the
 director, the answer assessor, and the interviewer. The smart slot runs the end-of-session
-grader, and coaching will join it next. Both are overridable with `SOTELLME_FAST_MODEL` and
+grader and coach. Both are overridable with `SOTELLME_FAST_MODEL` and
 `SOTELLME_SMART_MODEL` or the matching flags. The eval suites run against `google_genai`
 with an `anthropic` judge; that combo is the recommended one.
 

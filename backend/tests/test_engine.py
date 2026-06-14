@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from sotellme.assessor import AnswerAssessment, StarFlags
+from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import Director, EngineError, InterviewEngine, RoleBuilder, SessionHandle
 from sotellme.grader import AnswerScore, SessionGrade
@@ -140,6 +141,32 @@ class RecordingGrader:
         return self.grade
 
 
+COACH_REPORT = CoachReport(
+    summary="Solid stories, but you keep stopping before the outcome.",
+    answer_advice=[
+        AnswerAdvice(
+            question="Question 1 about their background.",
+            diagnosis="You named the work but not how it landed.",
+            fix="End the story with the number you measured after.",
+        )
+    ],
+    drills=[Drill(focus="Stating results", exercise="Retell a project ending on a metric.")],
+    study_plan="Turn each project into a STAR story that ends on a number.",
+)
+
+
+class RecordingCoacher:
+    def __init__(self, report: CoachReport = COACH_REPORT) -> None:
+        self.report = report
+        self.seen: list[tuple[tuple[Turn, ...], SessionGrade, TargetLevel]] = []
+
+    def __call__(
+        self, transcript: Sequence[Turn], grade: SessionGrade, target_level: TargetLevel
+    ) -> CoachReport:
+        self.seen.append((tuple(transcript), grade, target_level))
+        return self.report
+
+
 def build_engine(
     data_dir: Path,
     director: Director | None = None,
@@ -147,6 +174,7 @@ def build_engine(
     role_builder: RoleBuilder | None = None,
     researcher: object = None,
     grader: object = None,
+    coacher: object = None,
     question_cap: int = 20,
     follow_up_cap: int = 6,
 ) -> InterviewEngine:
@@ -159,6 +187,7 @@ def build_engine(
         role_builder=role_builder or builder_returning(acme_context()),
         researcher=researcher or stub_researcher,  # type: ignore[arg-type]
         grader=grader or RecordingGrader(),  # type: ignore[arg-type]
+        coacher=coacher or RecordingCoacher(),  # type: ignore[arg-type]
         question_cap=question_cap,
         follow_up_cap=follow_up_cap,
     )
@@ -256,6 +285,23 @@ def test_a_finished_session_carries_the_grade_over_the_real_transcript(tmp_path:
     assert result.grade == GRADE
     seen_transcript, seen_level = grader.seen[0]
     assert [turn.answer for turn in seen_transcript] == ["A strong, complete story."]
+    assert seen_level == "mid"
+
+
+def test_a_finished_session_carries_the_coaching_over_the_real_transcript_and_grade(
+    tmp_path: Path,
+) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    coacher = RecordingCoacher()
+    with build_engine(tmp_path / "data", director=director, coacher=coacher) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+
+    assert result.finished
+    assert result.coach == COACH_REPORT
+    seen_transcript, seen_grade, seen_level = coacher.seen[0]
+    assert [turn.answer for turn in seen_transcript] == ["A strong, complete story."]
+    assert seen_grade == GRADE
     assert seen_level == "mid"
 
 
@@ -540,6 +586,7 @@ def test_profile_survives_resume_without_reparsing(tmp_path: Path) -> None:
         role_builder=builder_returning(acme_context()),
         researcher=stub_researcher,
         grader=RecordingGrader(),
+        coacher=RecordingCoacher(),
     )
     with engine:
         resumed = engine.resume_latest()

@@ -13,6 +13,7 @@ import sys
 
 import sotellme.cli as cli
 from sotellme.assessor import AnswerAssessment, StarFlags
+from sotellme.coach import CoachReport
 from sotellme.director import DirectorDecision
 from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.profile import CandidateProfile, Role
@@ -86,6 +87,15 @@ def stub_grader(transcript, target_level):
     )
 
 
+def stub_coacher(transcript, grade, target_level):
+    return CoachReport(
+        summary="You tell the story well; tighten how you state the result.",
+        answer_advice=[],
+        drills=[],
+        study_plan="Practice ending each story on a measured outcome.",
+    )
+
+
 cli._build_profile_parser = lambda config: stub_parser
 cli._build_assessor = lambda config: keyword_assessor
 cli._build_director = lambda config: StubDirector()
@@ -93,6 +103,7 @@ cli._build_interviewer = lambda config: StubInterviewer()
 cli._build_role_builder = lambda config: (lambda posting_text: default_role_context())
 cli._build_researcher = lambda config: (lambda posting_text, context: "")
 cli._build_grader = lambda config: stub_grader
+cli._build_coacher = lambda config: stub_coacher
 sys.exit(cli.main(sys.argv[1:]))
 """
 

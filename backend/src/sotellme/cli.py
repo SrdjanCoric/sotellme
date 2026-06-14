@@ -12,10 +12,12 @@ from rich.console import Console
 from rich.panel import Panel
 
 from sotellme.assessor import AssessorError, assess_answer
+from sotellme.coach import CoachingError, CoachReport, coach_session
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
 from sotellme.director import DirectorError, LLMDirector
 from sotellme.engine import (
     Assessor,
+    Coacher,
     Director,
     EngineError,
     Grader,
@@ -36,9 +38,11 @@ from sotellme.research import build_company_brief
 from sotellme.role import RoleContext, RoleContextError, TargetLevel, build_role_context
 from sotellme.tracing import TracingError, langfuse_callbacks
 
-CLOSING_MESSAGE = "That's a wrap. Coaching arrives in a coming release."
+CLOSING_MESSAGE = "That's a wrap. A written report lands in a coming release."
 
 NO_SCORES_MESSAGE = "No answers to score from this session."
+
+NO_COACHING_MESSAGE = "No coaching for this session; there were no answers to work from."
 
 _STAR_LABELS = {
     "situation": "situation",
@@ -73,6 +77,25 @@ def format_score_summary(grade: SessionGrade) -> str:
             lines.append(f"   {answer.gap}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
+
+
+def format_coaching_summary(report: CoachReport) -> str:
+    if not report.answer_advice and not report.summary.strip():
+        return NO_COACHING_MESSAGE
+    sections: list[str] = []
+    if report.summary.strip():
+        sections.append(report.summary.strip())
+    for advice in report.answer_advice:
+        sections.append(
+            f"On: {_truncate_question(advice.question)}\n"
+            f"   {advice.diagnosis}\n"
+            f"   Fix: {advice.fix}"
+        )
+    for drill in report.drills:
+        sections.append(f"Drill - {drill.focus}\n   {drill.exercise}")
+    if report.study_plan.strip():
+        sections.append(f"Study plan\n   {report.study_plan.strip()}")
+    return "\n\n".join(sections)
 
 
 LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff)"
@@ -270,6 +293,13 @@ def _build_grader(config: ModelConfig) -> Grader:
     return lambda transcript, target_level: grade_session(transcript, target_level, model)
 
 
+def _build_coacher(config: ModelConfig) -> Coacher:
+    model = build_chat_model(config, "smart")
+    return lambda transcript, grade, target_level: coach_session(
+        transcript, grade, target_level, model
+    )
+
+
 def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
     interactive = _interactive()
     answer_session = _build_answer_session() if interactive else None
@@ -283,6 +313,7 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
     question: str | None = session.question
     closing: str | None = None
     grade: SessionGrade | None = None
+    coach: CoachReport | None = None
     while question is not None:
         console.print(Panel(question, title="Interviewer", border_style="cyan"))
         if answer_session is not None:
@@ -296,10 +327,13 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
         question = result.next_question
         closing = result.closing
         grade = result.grade
+        coach = result.coach
     if closing:
         console.print(Panel(closing, title="Interviewer", border_style="cyan"))
     if grade is not None:
         console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
+    if coach is not None:
+        console.print(Panel(format_coaching_summary(coach), title="Coaching", border_style="green"))
     console.print(f"\n[dim]{CLOSING_MESSAGE}[/dim]")
 
 
@@ -346,6 +380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             role_builder=_build_role_builder(config),
             researcher=_build_researcher(config),
             grader=_build_grader(config),
+            coacher=_build_coacher(config),
             callbacks=callbacks,
         )
         with engine:
@@ -369,6 +404,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         AssessorError,
         DirectorError,
         GradingError,
+        CoachingError,
         TranscriptInputError,
         EngineError,
         TracingError,
