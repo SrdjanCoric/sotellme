@@ -17,6 +17,7 @@ from sotellme.engine import (
     Assessor,
     Director,
     EngineError,
+    Grader,
     InterviewEngine,
     Interviewer,
     ProfileParser,
@@ -26,6 +27,7 @@ from sotellme.engine import (
 )
 from sotellme.extraction import CVInputError
 from sotellme.fetch import fetch_research_page
+from sotellme.grader import GradingError, SessionGrade, grade_session
 from sotellme.interviewer import LLMInterviewer
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import ProfileParseError, parse_candidate_profile
@@ -33,7 +35,44 @@ from sotellme.research import build_company_brief
 from sotellme.role import RoleContext, RoleContextError, TargetLevel, build_role_context
 from sotellme.tracing import TracingError, langfuse_callbacks
 
-CLOSING_MESSAGE = "That's a wrap. Grading and coaching arrive in a coming release."
+CLOSING_MESSAGE = "That's a wrap. Coaching arrives in a coming release."
+
+NO_SCORES_MESSAGE = "No answers to score from this session."
+
+_STAR_LABELS = {
+    "situation": "situation",
+    "task": "task",
+    "action": "action",
+    "result": "result",
+    "quantified_result": "a number on the result",
+}
+
+
+def _truncate_question(question: str, limit: int = 80) -> str:
+    collapsed = " ".join(question.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 1].rstrip() + "…"
+
+
+def format_score_summary(grade: SessionGrade) -> str:
+    if not grade.scores:
+        return NO_SCORES_MESSAGE
+    blocks: list[str] = []
+    for index, answer in enumerate(grade.scores, start=1):
+        lines = [f"{index}. [{answer.score}/5] {_truncate_question(answer.question)}"]
+        credibility = f"   specificity: {answer.specificity}"
+        if answer.ownership != "not_applicable":
+            credibility += f" · ownership: {answer.ownership}"
+        lines.append(credibility)
+        if answer.weak_or_missing:
+            named = ", ".join(_STAR_LABELS[element] for element in answer.weak_or_missing)
+            lines.append(f"   weak or missing: {named}")
+        if answer.gap:
+            lines.append(f"   {answer.gap}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
 
 LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff)"
 
@@ -42,8 +81,7 @@ TARGET_LEVELS: tuple[TargetLevel, ...] = ("junior", "mid", "senior", "staff")
 PLAIN_ANSWER_HINT = "[dim]Answer below. End with a blank line or /done.[/dim]"
 
 RICH_ANSWER_HINT = (
-    "[dim]Enter for a new line · Esc then Enter to send · "
-    "/done on its own line also sends · Ctrl-X Ctrl-E to edit in your $EDITOR.[/dim]"
+    "[dim]Enter for a new line · Esc then Enter to send · /done on its own line also sends.[/dim]"
 )
 
 
@@ -109,7 +147,7 @@ def _build_answer_session() -> PromptSession[str]:
     def _submit(event: KeyPressEvent) -> None:
         event.current_buffer.validate_and_handle()
 
-    return PromptSession(multiline=True, key_bindings=bindings, enable_open_in_editor=True)
+    return PromptSession(multiline=True, key_bindings=bindings)
 
 
 def _read_interactive_answer(session: PromptSession[str]) -> str:
@@ -181,6 +219,11 @@ def _build_researcher(config: ModelConfig) -> Researcher:
     return research
 
 
+def _build_grader(config: ModelConfig) -> Grader:
+    model = build_chat_model(config, "smart")
+    return lambda transcript, target_level: grade_session(transcript, target_level, model)
+
+
 def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
     interactive = _interactive()
     answer_session = _build_answer_session() if interactive else None
@@ -193,6 +236,7 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
             session = engine.submit_level(session.thread_id, level)
     question: str | None = session.question
     closing: str | None = None
+    grade: SessionGrade | None = None
     while question is not None:
         console.print(Panel(question, title="Interviewer", border_style="cyan"))
         if answer_session is not None:
@@ -205,8 +249,11 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
             result = engine.submit_answer(session.thread_id, answer)
         question = result.next_question
         closing = result.closing
+        grade = result.grade
     if closing:
         console.print(Panel(closing, title="Interviewer", border_style="cyan"))
+    if grade is not None:
+        console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
     console.print(f"\n[dim]{CLOSING_MESSAGE}[/dim]")
 
 
@@ -232,6 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             interviewer=_build_interviewer(config),
             role_builder=_build_role_builder(config),
             researcher=_build_researcher(config),
+            grader=_build_grader(config),
             callbacks=callbacks,
         )
         with engine:
@@ -254,6 +302,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         RoleContextError,
         AssessorError,
         DirectorError,
+        GradingError,
         EngineError,
         TracingError,
     ) as exc:

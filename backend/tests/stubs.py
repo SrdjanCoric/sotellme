@@ -52,6 +52,8 @@ class StubChatModel(BaseChatModel):
 
     structured_response: Any = None
     structured_error: Exception | None = None
+    structured_error_limit: int | None = None
+    structured_calls: int = 0
     text_response: str = ""
     seen_inputs: list[Any] = Field(default_factory=list)
 
@@ -74,7 +76,11 @@ class StubChatModel(BaseChatModel):
     ) -> Runnable[LanguageModelInput, dict[str, Any] | BaseModel]:
         def run(value: LanguageModelInput) -> dict[str, Any] | BaseModel:
             self.seen_inputs.append(value)
-            if self.structured_error is not None:
+            self.structured_calls += 1
+            if self.structured_error is not None and (
+                self.structured_error_limit is None
+                or self.structured_calls <= self.structured_error_limit
+            ):
                 raise self.structured_error
             result: dict[str, Any] | BaseModel = self.structured_response
             return result

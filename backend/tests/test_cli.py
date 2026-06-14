@@ -1,10 +1,33 @@
+from sotellme.assessor import StarFlags
 from sotellme.cli import (
     ask_target_level,
     build_parser,
+    format_score_summary,
     parse_target_level,
     read_multiline_answer,
     strip_done_sentinel,
 )
+from sotellme.grader import AnswerScore, SessionGrade
+
+
+def score(
+    question: str,
+    *,
+    weak_or_missing: list[str] | None = None,
+    gap: str = "",
+    ownership: str = "clear",
+    value: int = 5,
+) -> AnswerScore:
+    return AnswerScore(
+        question=question,
+        star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
+        specificity="high",
+        ownership=ownership,  # type: ignore[arg-type]
+        weak_or_missing=weak_or_missing or [],  # type: ignore[arg-type]
+        gap=gap,
+        rationale="Complete, quantified story at the target level.",
+        score=value,
+    )
 
 
 def test_strip_done_sentinel_removes_a_trailing_done_line() -> None:
@@ -94,3 +117,42 @@ def test_resume_command_parses() -> None:
     args = build_parser().parse_args(["resume"])
 
     assert args.command == "resume"
+
+
+def test_score_summary_lists_each_answer_with_its_score_and_named_gaps() -> None:
+    grade = SessionGrade(
+        scores=[
+            score(
+                "Tell me about the migration.",
+                weak_or_missing=["result"],
+                gap="No outcome stated.",
+                value=3,
+            ),
+            score("What problem was it solving?", value=5),
+        ]
+    )
+
+    summary = format_score_summary(grade)
+
+    assert "Tell me about the migration." in summary
+    assert "3/5" in summary
+    assert "5/5" in summary
+    assert "result" in summary
+    assert "No outcome stated." in summary
+
+
+def test_score_summary_omits_ownership_when_not_applicable() -> None:
+    grade = SessionGrade(
+        scores=[score("Why do you want to work here?", ownership="not_applicable", value=4)]
+    )
+
+    summary = format_score_summary(grade)
+
+    assert "specificity" in summary
+    assert "ownership" not in summary
+
+
+def test_score_summary_handles_a_session_with_no_scored_answers() -> None:
+    summary = format_score_summary(SessionGrade(scores=[]))
+
+    assert summary.strip()

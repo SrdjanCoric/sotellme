@@ -10,6 +10,7 @@ from sotellme.prompts import (
     DIRECTOR_HUMAN_TEMPLATE,
     DIRECTOR_SYSTEM_PROMPT,
     FOLLOW_UP_DIRECTIVE_TEMPLATE,
+    GRADER_SYSTEM_PROMPT,
     HOUSE_VOICE,
     INTERVIEWER_SYSTEM_PROMPT,
     NEW_TOPIC_DIRECTIVE_TEMPLATE,
@@ -106,6 +107,12 @@ def test_nothing_rubric_derived_enters_non_grader_prompts() -> None:
     }
 
     assert not leaks, f"rubric language leaked into interviewer/assessor/director prompts: {leaks}"
+
+
+def test_the_grader_is_where_the_rubric_lives() -> None:
+    assert rubric_markers_in(GRADER_SYSTEM_PROMPT), (
+        "the grader prompt should carry the rubric the firewall keeps out of every other prompt"
+    )
 
 
 def test_the_assessors_judgment_never_enters_candidate_facing_prompts() -> None:

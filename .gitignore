@@ -9,6 +9,8 @@ CLAUDE.md
 # Working docs
 plans
 scratch/
+issues/
+learn/
 
 # Secrets & environment
 .env
