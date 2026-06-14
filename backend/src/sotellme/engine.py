@@ -122,6 +122,7 @@ class TurnResult(BaseModel):
     closing: str | None = None
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
+    transcript: list[Turn] = []
 
     @property
     def finished(self) -> bool:
@@ -330,6 +331,7 @@ class InterviewEngine:
             closing=state.values.get("closing"),
             grade=state.values.get("grade"),
             coach=state.values.get("coach"),
+            transcript=state.values.get("transcript", []),
         )
 
     def close(self) -> None:

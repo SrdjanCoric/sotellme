@@ -6,8 +6,6 @@ import sys
 import time
 from pathlib import Path
 
-from sotellme.cli import CLOSING_MESSAGE
-
 STUB_AGENTS_DRIVER = """\
 import sys
 
@@ -163,6 +161,8 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
     weak_then_complete = (
         "I handled the situation and the task.\n\nsituation task action result quantified\n\n"
     )
+    report_dir = tmp_path / "reports"
+    report_dir.mkdir()
     resumed = subprocess.run(
         [sys.executable, str(driver), "resume"],
         env=env,
@@ -170,6 +170,7 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         timeout=60,
+        cwd=str(report_dir),
     )
 
     assert resumed.returncode == 0, resumed.stdout + resumed.stderr
@@ -177,4 +178,9 @@ def test_killed_session_resumes_from_checkpoint(tmp_path: Path) -> None:
     assert "what about the action they took" in resumed.stdout
     assert "thanks for walking me through it" in resumed.stdout
     assert "Scorecard" in resumed.stdout
-    assert CLOSING_MESSAGE in resumed.stdout
+    assert "Your full coaching report:" in resumed.stdout
+    reports = list(report_dir.glob("sotellme-report-*.md"))
+    assert len(reports) == 1
+    written = reports[0].read_text()
+    assert "Practice ending each story on a measured outcome." in written
+    assert "https://github.com/SrdjanCoric/sotellme/issues" in written
