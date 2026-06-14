@@ -1,44 +1,50 @@
 # sotellme
 
-A mock behavioral interviewer that runs in your terminal. You hand it your CV and a job
-posting; it researches the company, then runs an interview grounded in what your CV actually
-claims and in what the company actually makes. When the interview ends it grades every answer
-and prints a scorecard, then coaches you on the weak ones: what specifically held each answer
-back, and how to fix it next time. The full coaching, with the transcript, lands in a Markdown
-report in the directory you ran it from.
+A mock behavioral interviewer that runs in your terminal, built from your CV and the
+job you're actually chasing.
 
-An LLM interview director runs the session the way a trained interviewer would: it opens by
-asking who you are, digs into your most significant work, picks a few targeted stories to
-match the role, asks why this company, and stops when it has enough signal. A typical session
-runs 8 to 14 questions and a strong candidate earns a shorter one. Follow-ups chase whatever
-is most interesting in your last answer (an impact number left unexplained, a decision that
-needs a why), not a checklist of story elements. Pure logic guarantees the boundaries the
-director can't cross: a hard question cap, a guaranteed closing turn, and a ceiling on web
-fetches, all unit-tested.
+## Why I built it
 
-## What works today
+I built this because behavioral interviews are where good candidates trip up. The
+questions sound easy, so most people wing them, and the usual prep ("tell me about a
+time you failed") is too generic to help with the specific job in front of you.
 
-A full interview session: the tool parses your CV (PDF, markdown, or plain text), reads the
-posting into a weighted competency picture, fetches a handful of public pages about the
-company to build a brief, and interviews you against all of it, so a question about
-motivation can name the actual product you'd be working on. If the
-posting names a published values framework (Amazon's Leadership Principles, for example),
-the round leans on those principles. The target level is deduced from the posting when it
-states one and asked at the start when it doesn't; it is never silently defaulted, it shapes
-which competencies get emphasis, and the interviewer itself never sees it. When the session
-ends, a grading pass on the smart model reads the whole transcript and scores each answer for
-its STAR structure, specificity, and ownership against your target level, then prints a
-scorecard that names the weak or missing element in each one. A coach reads those scores and
-the transcript and turns them into advice: for each weak answer, what held it back and the
-concrete fix, plus drills for the patterns it sees across the session and a short study plan.
-The terminal shows the scorecard and a one-line read on the session, and the full coaching
-plus the transcript is written to a Markdown report whose path it prints; `sotellme reports`
-lists the reports already in that directory. A killed session resumes where it left off with
-`sotellme resume`.
+sotellme makes the practice specific. You give it your CV and a job posting, it reads
+up on the company, and then it interviews you against all three at once, so when it
+asks why you want the role it can name the product you'd actually be building. At the
+end it grades every answer and walks you through the weak ones: what went wrong, and
+what to say instead.
+
+## What it does
+
+It starts by parsing your CV (PDF, markdown, or plain text) and reading the posting
+into a weighted picture of the competencies the role cares about. Then it pulls a
+handful of public pages to put together a short brief on the company, and the interview
+runs against all of that. If the posting points to a published values framework, say
+Amazon's Leadership Principles, the questions lean on those. It works out the target
+level from the posting when the posting states one, and asks you at the start when it
+doesn't. That level decides which competencies get weight, and the interviewer itself
+never sees it.
+
+A language model runs the session the way a real interviewer would. It opens by asking
+who you are, digs into your biggest piece of work, picks a few stories that fit the
+role, asks why this company, and wraps up once it has enough to go on. Most sessions
+run 8 to 14 questions, and if you answer well you'll get a shorter one. Follow-ups go
+after whatever's most interesting in your last answer, like an impact number you
+mentioned but never explained, instead of marching through a checklist. The limits it
+can't cross (a cap on questions, a guaranteed closing question, a ceiling on web
+fetches) are plain code, and they're unit-tested.
+
+Once you're done, the smart model reads the whole transcript and scores every answer on
+STAR structure, specificity, and ownership against your target level, then prints a
+scorecard that names what's weak in each one. The coach takes those scores and turns
+them into something you can act on: a fix for each weak answer, drills for the habits it
+keeps seeing across the session, and a short study plan. All of it, plus the transcript,
+gets written to a Markdown report, and it prints you the path.
 
 ## Running it
 
-Not on PyPI yet; run it from source with `uv`:
+Run it from source with [`uv`](https://docs.astral.sh/uv/):
 
 ```sh
 cd backend
@@ -46,55 +52,49 @@ uv sync
 uv run sotellme interview --cv path/to/cv.pdf --job https://jobs.example.com/senior-backend
 ```
 
-`--job` takes a link, a file (PDF, markdown, or text), or the pasted posting text. For a
-link, the tool prefers the page's embedded `JobPosting` structured data (the block job boards
-publish for search engines; LinkedIn job pages carry it) and falls back to the page's visible
-text; Workable postings are read through Workable's public API. Pages that only build their
-content with JavaScript in the browser can't be read; the error says so, and pasting the
-posting text always works. The flag is also optional; without a posting the interview runs on
-a default competency set, with no company research to ground it.
+`--job` takes a link, a file (PDF, markdown, or text), or pasted posting text. For a
+link, the tool prefers the page's embedded `JobPosting` data and falls back to the
+visible text; Workable postings are read through Workable's public API. Pages that only
+render in the browser with JavaScript can't be read, and pasting the text always works.
+`--job` is optional; without it the interview runs on a default competency set, with no
+company research to ground it.
 
-Answers are multi-line with real line editing: Home, End, arrow keys, and word jumps all
-work, so you can fix a typo three lines up without retyping. Enter starts a new line; Esc
-then Enter sends, or put `/done` on its own line. To rework a long answer, Ctrl-X Ctrl-E opens
-it in your `$EDITOR`. `uv run sotellme resume` picks up the latest interrupted session.
+A few more things you can do:
 
-`uv run sotellme grade session.json --level senior` grades a transcript you already have: a
-JSON list of `{question, answer}` pairs, scored and printed without running a live interview.
-It's how you replay a past session against a changed rubric or a different model.
+- Answers are multi-line with real line editing (Home, End, arrow keys, word jumps).
+  Enter starts a new line; Esc then Enter sends, or put `/done` on its own line.
+  `Ctrl-X Ctrl-E` opens the answer in your `$EDITOR`.
+- `uv run sotellme resume` picks up the latest interrupted session.
+- `uv run sotellme reports` lists the reports in the current directory, newest first.
+- `uv run sotellme grade session.json --level senior` grades a transcript you already
+  have (a JSON list of `{question, answer}` pairs) without running a live interview, so
+  you can replay a past session against a changed rubric or model.
 
-Every finished interview writes a `sotellme-report-*.md` to the directory you ran it from, with
-the per-answer advice, drills, study plan, and the full transcript. `uv run sotellme reports`
-lists the ones already in the current directory, newest first. The report ends with a line
-inviting you to open a GitHub issue if a session felt off; sharing is yours to do, and the tool
-sends nothing on its own.
+## Configuration
 
-## Bring your own key
+There's no account and no server. Pick a provider with `SOTELLME_PROVIDER` (or
+`--provider`) and set its key:
 
-There's no account and no server. Pick a provider with `SOTELLME_PROVIDER` (or `--provider`)
-and set its key:
+| Provider       | Key variable        | Default models (fast / smart)         |
+| -------------- | ------------------- | ------------------------------------- |
+| `google_genai` | `GOOGLE_API_KEY`    | gemini-3.1-pro-preview for both slots |
+| `anthropic`    | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 / claude-opus-4-8   |
+| `openai`       | `OPENAI_API_KEY`    | gpt-5.4-mini / gpt-5.5                |
 
-| Provider       | Key variable        | Default models (fast / smart)             |
-| -------------- | ------------------- | ----------------------------------------- |
-| `google_genai` | `GOOGLE_API_KEY`    | gemini-3.1-pro-preview for both slots     |
-| `anthropic`    | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 / claude-opus-4-8       |
-| `openai`       | `OPENAI_API_KEY`    | gpt-5.4-mini / gpt-5.5                    |
+The fast slot runs the interview side (CV parser, company researcher, director, answer
+assessor, interviewer); the smart slot runs the end-of-session grader and coach. You can
+override both with `SOTELLME_FAST_MODEL` and `SOTELLME_SMART_MODEL` or the matching
+flags. The eval suites run against `google_genai` with an `anthropic` judge, which is
+the combo I'd reach for.
 
-The fast slot runs the whole interview side: the CV parser, the company researcher, the
-director, the answer assessor, and the interviewer. The smart slot runs the end-of-session
-grader and coach. Both are overridable with `SOTELLME_FAST_MODEL` and
-`SOTELLME_SMART_MODEL` or the matching flags. The eval suites run against `google_genai`
-with an `anthropic` judge; that combo is the recommended one.
-
-Transcripts and session state stay on your machine. Data leaves it only as API calls to the
-provider you picked, plus plain HTTP GETs to public web pages: one for `--job` when you pass
-a link, and up to six more chosen by the research agent while it builds the company brief.
-Those fetches are capped per session, truncated per page, refused outright for localhost and
-private addresses, and carry no credentials, because the fetching code never reads your
-environment. Your API key is read only by the infrastructure code that calls the provider
-and never enters any prompt, so no hostile page or posting can talk the model into revealing
-it; the model has nothing to reveal. Tests pin these properties (`tests/test_fetch.py`,
-`tests/test_secret_isolation.py`, `tests/test_injection.py`).
+Your transcripts and session state stay on your machine. The only things that leave it
+are API calls to whichever provider you picked, plus plain HTTP GETs to public pages:
+one for a `--job` link, and up to six more for the company brief. Those fetches are
+capped per session, truncated per page, and refused for localhost and private
+addresses. Your API key is read only by the code that calls the provider and never goes
+into a prompt, so no hostile page or posting can talk the model into leaking it. Tests
+pin all of this down (`tests/test_fetch.py`, `tests/test_secret_isolation.py`,
+`tests/test_injection.py`).
 
 ## Development
 
@@ -106,6 +106,5 @@ uv sync
 uv run ruff check . && uv run mypy && uv run pytest
 ```
 
-The deterministic suite runs without API keys; the eval tests are key-gated and skip when no
-provider key is set. Langfuse tracing is a dev-time option that activates only when its env
-vars are set.
+The deterministic suite runs without API keys; the eval tests skip when no provider key
+is set. Langfuse tracing only kicks in when its env vars are set.
