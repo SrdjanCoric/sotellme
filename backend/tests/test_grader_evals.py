@@ -21,10 +21,18 @@ needs_provider_key = pytest.mark.skipif(
 STAR_FLAGS = ("situation", "task", "action", "result", "quantified_result")
 
 
-def load_cases() -> list[dict[str, Any]]:
+def _all_cases() -> list[dict[str, Any]]:
     document = json.loads(CASES_FILE.read_text())
     cases: list[dict[str, Any]] = document["cases"]
     return cases
+
+
+def load_cases() -> list[dict[str, Any]]:
+    return [case for case in _all_cases() if "answer" in case]
+
+
+def load_transcript_cases() -> list[dict[str, Any]]:
+    return [case for case in _all_cases() if "turns" in case]
 
 
 def grade_case(case: dict[str, Any]) -> AnswerScore:
@@ -77,4 +85,37 @@ def test_the_grader_scores_the_answer_as_labeled(case: dict[str, Any]) -> None:
         f"score={answer.score}\n"
         f"  grader rationale: {answer.rationale}\n"
         f"  grader gap: {answer.gap}"
+    )
+
+
+def grade_transcript_case(case: dict[str, Any]) -> list[AnswerScore]:
+    config = resolve_model_config(env=os.environ, provider=EVAL_PROVIDER)
+    model = build_chat_model(config, "smart")
+    transcript = [Turn(question=turn["question"], answer=turn["answer"]) for turn in case["turns"]]
+    grade = grade_session(transcript, case["target_level"], model)
+    assert len(grade.scores) == len(transcript), (
+        f"{case['name']}: graded {len(grade.scores)} of {len(transcript)} answers"
+    )
+    return grade.scores
+
+
+@needs_provider_key
+@pytest.mark.parametrize("case", load_transcript_cases(), ids=lambda case: str(case["name"]))
+def test_the_grader_levels_a_full_session_by_scope(case: dict[str, Any]) -> None:
+    scores = grade_transcript_case(case)
+
+    def render(index: int) -> str:
+        answer = scores[index - 1]
+        return f"turn {index} scored {answer.score}/5 (rationale: {answer.rationale})"
+
+    too_low = [i for i in case.get("senior_floor_turns", []) if scores[i - 1].score < 4]
+    assert not too_low, (
+        f"{case['name']}: end-to-end ownership at a small team was under-leveled at senior "
+        f"(must score at least 4): " + "; ".join(render(i) for i in too_low)
+    )
+
+    too_high = [i for i in case.get("senior_ceiling_turns", []) if scores[i - 1].score > 3]
+    assert not too_high, (
+        f"{case['name']}: a weak answer was over-leveled at senior (must score at most 3): "
+        + "; ".join(render(i) for i in too_high)
     )

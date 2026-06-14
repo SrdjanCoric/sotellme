@@ -53,6 +53,10 @@ work, so you can fix a typo three lines up without retyping. Enter starts a new 
 then Enter sends, or put `/done` on its own line. To rework a long answer, Ctrl-X Ctrl-E opens
 it in your `$EDITOR`. `uv run sotellme resume` picks up the latest interrupted session.
 
+`uv run sotellme grade session.json --level senior` grades a transcript you already have: a
+JSON list of `{question, answer}` pairs, scored and printed without running a live interview.
+It's how you replay a past session against a changed rubric or a different model.
+
 ## Bring your own key
 
 There's no account and no server. Pick a provider with `SOTELLME_PROVIDER` (or `--provider`)
