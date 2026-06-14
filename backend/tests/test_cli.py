@@ -1,18 +1,20 @@
+from pathlib import Path
+
 import pytest
 
 from sotellme.assessor import StarFlags
 from sotellme.cli import (
+    NO_REPORTS_MESSAGE,
     TranscriptInputError,
     ask_target_level,
     build_parser,
-    format_coaching_summary,
+    format_report_list,
     format_score_summary,
     parse_target_level,
     parse_transcript,
     read_multiline_answer,
     strip_done_sentinel,
 )
-from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.grader import AnswerScore, SessionGrade
 
 
@@ -125,6 +127,28 @@ def test_resume_command_parses() -> None:
     assert args.command == "resume"
 
 
+def test_reports_command_parses() -> None:
+    args = build_parser().parse_args(["reports"])
+
+    assert args.command == "reports"
+
+
+def test_format_report_list_names_each_report() -> None:
+    listing = format_report_list(
+        [
+            Path("sotellme-report-20260614-080000.md"),
+            Path("sotellme-report-20260610-080000.md"),
+        ]
+    )
+
+    assert "sotellme-report-20260614-080000.md" in listing
+    assert "sotellme-report-20260610-080000.md" in listing
+
+
+def test_format_report_list_handles_no_reports() -> None:
+    assert format_report_list([]) == NO_REPORTS_MESSAGE
+
+
 def test_grade_command_parses_transcript_level_and_model_flags() -> None:
     args = build_parser().parse_args(
         ["grade", "session.json", "--level", "senior", "--provider", "anthropic"]
@@ -201,45 +225,5 @@ def test_score_summary_omits_ownership_when_not_applicable() -> None:
 
 def test_score_summary_handles_a_session_with_no_scored_answers() -> None:
     summary = format_score_summary(SessionGrade(scores=[]))
-
-    assert summary.strip()
-
-
-def a_coach_report() -> CoachReport:
-    return CoachReport(
-        summary="Clear stories, but you keep stopping before the result.",
-        answer_advice=[
-            AnswerAdvice(
-                question="Tell me about the migration.",
-                diagnosis="You named the cutover but never said how it landed.",
-                fix="End the migration story with the latency you measured after it shipped.",
-            )
-        ],
-        drills=[
-            Drill(
-                focus="Stating the result",
-                exercise="Retell a project in four sentences, the last one a number.",
-            )
-        ],
-        study_plan="Turn each project into a STAR story that ends on a metric.",
-    )
-
-
-def test_coaching_summary_renders_the_summary_advice_drills_and_plan() -> None:
-    summary = format_coaching_summary(a_coach_report())
-
-    assert "Clear stories, but you keep stopping before the result." in summary
-    assert "Tell me about the migration." in summary
-    assert "how it landed" in summary
-    assert "latency you measured" in summary
-    assert "Stating the result" in summary
-    assert "Retell a project" in summary
-    assert "STAR story that ends on a metric" in summary
-
-
-def test_coaching_summary_handles_a_session_with_nothing_to_coach() -> None:
-    summary = format_coaching_summary(
-        CoachReport(summary="", answer_advice=[], drills=[], study_plan="")
-    )
 
     assert summary.strip()

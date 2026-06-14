@@ -4,8 +4,8 @@ A mock behavioral interviewer that runs in your terminal. You hand it your CV an
 posting; it researches the company, then runs an interview grounded in what your CV actually
 claims and in what the company actually makes. When the interview ends it grades every answer
 and prints a scorecard, then coaches you on the weak ones: what specifically held each answer
-back, and how to fix it next time. Writing all of that to a report file is the next phase on
-the plan.
+back, and how to fix it next time. The full coaching, with the transcript, lands in a Markdown
+report in the directory you ran it from.
 
 An LLM interview director runs the session the way a trained interviewer would: it opens by
 asking who you are, digs into your most significant work, picks a few targeted stories to
@@ -31,8 +31,10 @@ its STAR structure, specificity, and ownership against your target level, then p
 scorecard that names the weak or missing element in each one. A coach reads those scores and
 the transcript and turns them into advice: for each weak answer, what held it back and the
 concrete fix, plus drills for the patterns it sees across the session and a short study plan.
-That advice prints to the terminal for now; writing it to a report file is the next phase. A
-killed session resumes where it left off with `sotellme resume`.
+The terminal shows the scorecard and a one-line read on the session, and the full coaching
+plus the transcript is written to a Markdown report whose path it prints; `sotellme reports`
+lists the reports already in that directory. A killed session resumes where it left off with
+`sotellme resume`.
 
 ## Running it
 
@@ -60,6 +62,12 @@ it in your `$EDITOR`. `uv run sotellme resume` picks up the latest interrupted s
 `uv run sotellme grade session.json --level senior` grades a transcript you already have: a
 JSON list of `{question, answer}` pairs, scored and printed without running a live interview.
 It's how you replay a past session against a changed rubric or a different model.
+
+Every finished interview writes a `sotellme-report-*.md` to the directory you ran it from, with
+the per-answer advice, drills, study plan, and the full transcript. `uv run sotellme reports`
+lists the ones already in the current directory, newest first. The report ends with a line
+inviting you to open a GitHub issue if a session felt off; sharing is yours to do, and the tool
+sends nothing on its own.
 
 ## Bring your own key
 

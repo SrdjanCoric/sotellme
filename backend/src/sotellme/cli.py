@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
@@ -34,15 +35,16 @@ from sotellme.grader import GradingError, SessionGrade, grade_session
 from sotellme.interviewer import LLMInterviewer, Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import ProfileParseError, parse_candidate_profile
+from sotellme.report import list_reports, write_report
 from sotellme.research import build_company_brief
 from sotellme.role import RoleContext, RoleContextError, TargetLevel, build_role_context
 from sotellme.tracing import TracingError, langfuse_callbacks
 
-CLOSING_MESSAGE = "That's a wrap. A written report lands in a coming release."
-
 NO_SCORES_MESSAGE = "No answers to score from this session."
 
 NO_COACHING_MESSAGE = "No coaching for this session; there were no answers to work from."
+
+NO_REPORTS_MESSAGE = "No coaching reports in this directory yet."
 
 _STAR_LABELS = {
     "situation": "situation",
@@ -79,23 +81,10 @@ def format_score_summary(grade: SessionGrade) -> str:
     return "\n\n".join(blocks)
 
 
-def format_coaching_summary(report: CoachReport) -> str:
-    if not report.answer_advice and not report.summary.strip():
-        return NO_COACHING_MESSAGE
-    sections: list[str] = []
-    if report.summary.strip():
-        sections.append(report.summary.strip())
-    for advice in report.answer_advice:
-        sections.append(
-            f"On: {_truncate_question(advice.question)}\n"
-            f"   {advice.diagnosis}\n"
-            f"   Fix: {advice.fix}"
-        )
-    for drill in report.drills:
-        sections.append(f"Drill - {drill.focus}\n   {drill.exercise}")
-    if report.study_plan.strip():
-        sections.append(f"Study plan\n   {report.study_plan.strip()}")
-    return "\n\n".join(sections)
+def format_report_list(reports: Sequence[Path]) -> str:
+    if not reports:
+        return NO_REPORTS_MESSAGE
+    return "\n".join(report.name for report in reports)
 
 
 LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff)"
@@ -229,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
     resume = subcommands.add_parser("resume", help="Resume the latest interrupted session.")
     _add_model_flags(resume)
 
+    subcommands.add_parser("reports", help="List the coaching reports in this directory.")
+
     grade = subcommands.add_parser(
         "grade", help="Grade a saved transcript without running a live interview."
     )
@@ -314,6 +305,7 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
     closing: str | None = None
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
+    transcript: list[Turn] = []
     while question is not None:
         console.print(Panel(question, title="Interviewer", border_style="cyan"))
         if answer_session is not None:
@@ -328,13 +320,18 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionHand
         closing = result.closing
         grade = result.grade
         coach = result.coach
+        transcript = result.transcript
     if closing:
         console.print(Panel(closing, title="Interviewer", border_style="cyan"))
     if grade is not None:
         console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
-    if coach is not None:
-        console.print(Panel(format_coaching_summary(coach), title="Coaching", border_style="green"))
-    console.print(f"\n[dim]{CLOSING_MESSAGE}[/dim]")
+    if coach is not None and grade is not None and grade.scores:
+        path = write_report(coach, transcript, Path.cwd(), datetime.now())
+        if coach.summary.strip():
+            console.print(Panel(coach.summary.strip(), title="Coaching", border_style="green"))
+        console.print(f"\n[bold]Your full coaching report:[/bold] {path}")
+    else:
+        console.print(f"\n[dim]{NO_COACHING_MESSAGE}[/dim]")
 
 
 def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_level: str) -> None:
@@ -354,9 +351,16 @@ def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_
     console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
 
 
+def _run_reports(console: Console) -> None:
+    console.print(format_report_list(list_reports(Path.cwd())))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     console = Console()
+    if args.command == "reports":
+        _run_reports(console)
+        return 0
     try:
         config = resolve_model_config(
             env=os.environ,

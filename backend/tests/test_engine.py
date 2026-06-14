@@ -305,6 +305,30 @@ def test_a_finished_session_carries_the_coaching_over_the_real_transcript_and_gr
     assert seen_level == "mid"
 
 
+def test_a_finished_session_carries_the_full_transcript(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "We migrated the billing pipeline.")
+        result = engine.submit_answer(session.thread_id, "It cut latency by 40 percent.")
+
+    assert result.finished
+    assert [turn.answer for turn in result.transcript] == [
+        "We migrated the billing pipeline.",
+        "It cut latency by 40 percent.",
+    ]
+
+
+def test_an_unfinished_turn_carries_no_transcript(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "We migrated the billing pipeline.")
+
+    assert not result.finished
+    assert result.transcript == []
+
+
 def test_the_grade_reads_the_session_target_level(tmp_path: Path) -> None:
     director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
     builder = builder_returning(acme_context(target_level=None))
