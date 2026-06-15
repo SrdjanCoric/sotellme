@@ -13,6 +13,7 @@ from sotellme.config import PROVIDER_KEY_VARS
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import InterviewEngine
 from sotellme.grader import SessionGrade
+from sotellme.guardrail import GuardrailVerdict
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
 from sotellme.research import build_company_brief
@@ -72,6 +73,14 @@ class StubInterviewer:
     def closing_turn(self, transcript: Sequence[Turn]) -> str:
         return "That covers it, thanks."
 
+    def redirect_turn(self, question: str) -> str:
+        return f"Let's stay with the interview. {question}"
+
+
+class StubGuardrail:
+    def classify(self, question: str, answer: str) -> GuardrailVerdict:
+        return "allow"
+
 
 def stub_grader(transcript: Sequence[Turn], target_level: str) -> SessionGrade:
     return SessionGrade(scores=[])
@@ -92,6 +101,7 @@ def build_isolated_engine(tmp_path: Path, brief: str = "") -> InterviewEngine:
         researcher=lambda posting, context: brief,
         grader=stub_grader,
         coacher=stub_coacher,
+        guardrail=StubGuardrail(),
     )
 
 

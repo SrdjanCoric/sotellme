@@ -19,6 +19,7 @@ AGENT_TIERS: dict[str, str] = {
     "director": "fast",
     "interviewer": "fast",
     "assessor": "fast",
+    "guardrail": "fast",
     "grader": "smart",
     "coach": "smart",
 }

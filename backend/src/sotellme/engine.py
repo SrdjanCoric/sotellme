@@ -26,6 +26,7 @@ from sotellme.coverage import (
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.extraction import extract_cv_text
 from sotellme.grader import AnswerScore, SessionGrade
+from sotellme.guardrail import GuardrailState, GuardrailVerdict, resolve_turn
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Project, Role
 from sotellme.role import (
@@ -85,6 +86,12 @@ class Interviewer(Protocol):
 
     def closing_turn(self, transcript: Sequence[Turn]) -> str: ...
 
+    def redirect_turn(self, question: str) -> str: ...
+
+
+class Guardrail(Protocol):
+    def classify(self, question: str, answer: str) -> GuardrailVerdict: ...
+
 
 class EngineError(Exception):
     pass
@@ -99,6 +106,10 @@ class InterviewState(TypedDict, total=False):
     emphasis: list[str]
     company_brief: str
     question: str
+    pending_answer: str
+    redirect: str
+    guardrail_redirects: int
+    screened: GuardrailVerdict
     transcript: list[Turn]
     assessments: list[TopicAssessment]
     questions_asked: int
@@ -153,9 +164,9 @@ def _derive_emphasis(state: InterviewState) -> InterviewState:
 
 
 def _await_answer(state: InterviewState) -> InterviewState:
-    answer = interrupt({"question": state["question"]})
-    turn = Turn(question=state["question"], answer=str(answer))
-    return {"transcript": [*state.get("transcript", []), turn]}
+    prompt = state.get("redirect") or state["question"]
+    answer = interrupt({"question": prompt})
+    return {"pending_answer": str(answer)}
 
 
 class InterviewEngine:
@@ -170,6 +181,7 @@ class InterviewEngine:
         researcher: Researcher,
         grader: Grader,
         coacher: Coacher,
+        guardrail: Guardrail,
         question_cap: int = DEFAULT_QUESTION_CAP,
         follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
         callbacks: list[BaseCallbackHandler] | None = None,
@@ -249,6 +261,29 @@ class InterviewEngine:
                 "current_topic": topic,
             }
 
+        def screen(state: InterviewState) -> InterviewState:
+            pending = state.get("pending_answer", "")
+            raw = guardrail.classify(state["question"], pending)
+            envelope = GuardrailState(consecutive_redirects=state.get("guardrail_redirects", 0))
+            verdict, envelope = resolve_turn(raw, envelope)
+            if verdict == "allow":
+                turn = Turn(question=state["question"], answer=pending)
+                return {
+                    "transcript": [*state.get("transcript", []), turn],
+                    "pending_answer": "",
+                    "redirect": "",
+                    "guardrail_redirects": 0,
+                    "screened": "allow",
+                }
+            if verdict == "redirect":
+                return {
+                    "redirect": interviewer.redirect_turn(state["question"]),
+                    "pending_answer": "",
+                    "guardrail_redirects": envelope.consecutive_redirects,
+                    "screened": "redirect",
+                }
+            return {"pending_answer": "", "screened": "terminate"}
+
         def assess(state: InterviewState) -> InterviewState:
             topic = state.get("current_topic", "")
             assessment = assessor(topic, state["transcript"])
@@ -274,6 +309,14 @@ class InterviewEngine:
                 return "pose_closing"
             return "pose_question"
 
+        def route_after_screen(state: InterviewState) -> str:
+            verdict = state["screened"]
+            if verdict == "allow":
+                return "assess"
+            if verdict == "redirect":
+                return "await_answer"
+            return "pose_closing"
+
         graph = StateGraph(InterviewState)
         graph.add_node("extract", _extract)
         graph.add_node("parse_profile", parse_profile)
@@ -284,6 +327,7 @@ class InterviewEngine:
         graph.add_node("direct", direct)
         graph.add_node("pose_question", pose_question)
         graph.add_node("await_answer", _await_answer)
+        graph.add_node("screen", screen)
         graph.add_node("assess", assess)
         graph.add_node("pose_closing", pose_closing)
         graph.add_node("grade", grade)
@@ -297,7 +341,10 @@ class InterviewEngine:
         graph.add_edge("research", "direct")
         graph.add_conditional_edges("direct", route_after_direct, ["pose_question", "pose_closing"])
         graph.add_edge("pose_question", "await_answer")
-        graph.add_edge("await_answer", "assess")
+        graph.add_edge("await_answer", "screen")
+        graph.add_conditional_edges(
+            "screen", route_after_screen, ["assess", "await_answer", "pose_closing"]
+        )
         graph.add_edge("assess", "direct")
         graph.add_edge("pose_closing", "grade")
         graph.add_edge("grade", "coach")
@@ -337,7 +384,8 @@ class InterviewEngine:
         self._graph.invoke(Command(resume=answer), self._config(thread_id))
         state = self._graph.get_state(self._config(thread_id))
         if state.next:
-            return TurnResult(next_question=state.values["question"])
+            values = state.values
+            return TurnResult(next_question=values.get("redirect") or values["question"])
         return TurnResult(
             next_question=None,
             closing=state.values.get("closing"),
@@ -380,7 +428,11 @@ class InterviewEngine:
             profile=values["profile"],
             needs_level=needs_level,
             level=role_context.target_level if role_context is not None else None,
-            question=None if needs_level or finished else values.get("question"),
+            question=(
+                None
+                if needs_level or finished
+                else (values.get("redirect") or values.get("question"))
+            ),
             transcript=list(values.get("transcript", [])),
             finished=finished,
             closing=values.get("closing"),

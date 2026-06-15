@@ -64,6 +64,14 @@ class StubInterviewer:
     def closing_turn(self, transcript):
         return "That covers the migration, thanks for walking me through it."
 
+    def redirect_turn(self, question):
+        return f"Let's stay with the interview. {question}"
+
+
+class AllowGuardrail:
+    def classify(self, question, answer):
+        return "allow"
+
 
 def stub_grader(transcript, target_level):
     return SessionGrade(
@@ -98,6 +106,7 @@ cli._build_profile_parser = lambda config: stub_parser
 cli._build_assessor = lambda config: keyword_assessor
 cli._build_director = lambda config: StubDirector()
 cli._build_interviewer = lambda config: StubInterviewer()
+cli._build_guardrail = lambda config: AllowGuardrail()
 cli._build_role_builder = lambda config: (lambda posting_text: default_role_context())
 cli._build_researcher = lambda config: (lambda posting_text, context: "")
 cli._build_grader = lambda config: stub_grader
