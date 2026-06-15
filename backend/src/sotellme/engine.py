@@ -15,6 +15,7 @@ from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
 from sotellme.assessor import AnswerAssessment, StarFlags, TopicAssessment
+from sotellme.budget import DEFAULT_TOKEN_BUDGET, BudgetCallback, default_session_budget
 from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.coverage import (
     DEFAULT_FOLLOW_UP_CAP,
@@ -28,6 +29,7 @@ from sotellme.extraction import extract_cv_text
 from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.guardrail import GuardrailState, GuardrailVerdict, resolve_turn
 from sotellme.interviewer import Turn
+from sotellme.pricing import ModelUsage
 from sotellme.profile import CandidateProfile, Project, Role
 from sotellme.role import (
     CompetencyWeight,
@@ -56,6 +58,8 @@ CHECKPOINTED_TYPES = (
 )
 
 ENVELOPE_WRAP_REASON = "The session envelope is closed; the interview ends here."
+
+BUDGET_WRAP_REASON = "The session token budget is nearly spent; the interview wraps up here."
 
 FOLLOW_UPS_EXHAUSTED_WRAP_REASON = (
     "Follow-ups on this topic are exhausted and the director offered no new topic; "
@@ -184,11 +188,14 @@ class InterviewEngine:
         guardrail: Guardrail,
         question_cap: int = DEFAULT_QUESTION_CAP,
         follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
+        token_budget: int = DEFAULT_TOKEN_BUDGET,
         callbacks: list[BaseCallbackHandler] | None = None,
     ) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
         self._data_dir = data_dir
-        self._callbacks = callbacks or []
+        self._token_budget = token_budget
+        self._budget_callback = BudgetCallback()
+        self._callbacks = [*(callbacks or []), self._budget_callback]
         self._conn = sqlite3.connect(data_dir / "checkpoints.sqlite", check_same_thread=False)
 
         def parse_profile(state: InterviewState) -> InterviewState:
@@ -210,12 +217,17 @@ class InterviewEngine:
             return {"company_brief": brief}
 
         def direct(state: InterviewState) -> InterviewState:
+            budget = default_session_budget(
+                self._token_budget, tokens_used=self._budget_callback.total_tokens
+            )
             envelope = EnvelopeState(
                 questions_asked=state.get("questions_asked", 0),
                 consecutive_follow_ups=state.get("consecutive_follow_ups", 0),
+                budget_exhausted=budget.exhausted,
             )
             if not question_allowed(envelope, question_cap):
-                return {"decision": DirectorDecision(action="wrap_up", reason=ENVELOPE_WRAP_REASON)}
+                reason = BUDGET_WRAP_REASON if budget.exhausted else ENVELOPE_WRAP_REASON
+                return {"decision": DirectorDecision(action="wrap_up", reason=reason)}
             situation = DirectorSituation(
                 profile=state["profile"],
                 context=state["role_context"],
@@ -393,6 +405,13 @@ class InterviewEngine:
             coach=state.values.get("coach"),
             transcript=state.values.get("transcript", []),
         )
+
+    @property
+    def budget_callback(self) -> BudgetCallback:
+        return self._budget_callback
+
+    def session_usage(self) -> dict[str, ModelUsage]:
+        return self._budget_callback.usage
 
     def close(self) -> None:
         self._conn.close()

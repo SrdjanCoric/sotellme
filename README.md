@@ -33,7 +33,8 @@ run 8 to 14 questions, and if you answer well you'll get a shorter one. Follow-u
 after whatever's most interesting in your last answer, like an impact number you
 mentioned but never explained, instead of marching through a checklist. The limits it
 can't cross (a cap on questions, a guaranteed closing question, a ceiling on web
-fetches) are plain code, and they're unit-tested.
+fetches, a token budget that ends a long session early) are plain code, and they're
+unit-tested.
 
 It also screens what you type before it reaches the interview. Go off-topic, or try to
 talk it into doing something else, and it nudges you back to the question; the second
@@ -46,6 +47,12 @@ scorecard that names what's weak in each one. The coach takes those scores and t
 them into something you can act on: a fix for each weak answer, drills for the habits it
 keeps seeing across the session, and a short study plan. All of it, plus the transcript,
 gets written to a Markdown report, and it prints you the path.
+
+It tells you what the run costs. Before the interview starts it shows a rough estimate
+for the model you picked, and when it ends it prints the tokens it used and what they
+cost, broken out by model and by input versus output. The prices ship with the tool as a
+static list, so they're estimates; check your provider's current rates when the number
+matters.
 
 ## Running it
 
@@ -97,7 +104,7 @@ There's no account and no server. Pick a provider with `SOTELLME_PROVIDER` (or
 
 | Provider       | Key variable        | Default models (fast / smart)         |
 | -------------- | ------------------- | ------------------------------------- |
-| `google_genai` | `GOOGLE_API_KEY`    | gemini-3.1-pro-preview for both slots |
+| `google_genai` | `GOOGLE_API_KEY`    | gemini-3.5-flash / gemini-3.1-pro-preview |
 | `anthropic`    | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 / claude-opus-4-8   |
 | `openai`       | `OPENAI_API_KEY`    | gpt-5.4-mini / gpt-5.5                |
 
@@ -113,7 +120,12 @@ that lists the models you want and the default for each provider, and that's wha
 picker shows. In the web app's Advanced section you can go finer and set a model for each step on its
 own, a cheap one for the company research and a stronger one for the questions and the
 grading, mixing providers once you've set more than one key. The file holds model names
-only; your API keys stay in the environment.
+only; your API keys stay in the environment. It also carries the per-model prices behind
+the cost estimates, so you can correct a rate that's drifted.
+
+The session has a token budget, 400,000 by default, that ends the interview early if a
+run goes long and keeps a reserved share back to grade and coach what you gave. Change it
+with `SOTELLME_TOKEN_BUDGET`.
 
 Your transcripts and session state stay on your machine. The only things that leave it
 are API calls to whichever provider you picked, plus plain HTTP GETs to public pages:

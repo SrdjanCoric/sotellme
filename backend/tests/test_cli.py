@@ -10,6 +10,8 @@ from sotellme.cli import (
     ask_target_level,
     build_engine,
     build_parser,
+    format_cost_estimate,
+    format_cost_summary,
     format_report_list,
     format_score_summary,
     parse_target_level,
@@ -20,6 +22,7 @@ from sotellme.cli import (
 )
 from sotellme.config import AGENT_ROLES, resolve_model_config
 from sotellme.grader import AnswerScore, SessionGrade
+from sotellme.pricing import CostEstimate, CostSummary, ModelCost
 
 
 def score(
@@ -258,3 +261,80 @@ def test_score_summary_handles_a_session_with_no_scored_answers() -> None:
     summary = format_score_summary(SessionGrade(scores=[]))
 
     assert summary.strip()
+
+
+def test_cost_estimate_names_the_dollar_amount_model_and_that_it_is_an_estimate() -> None:
+    estimate = CostEstimate(
+        model="claude-opus-4-8",
+        expected_turns=12,
+        input_tokens=62_000,
+        output_tokens=13_900,
+        usd=0.66,
+    )
+
+    line = format_cost_estimate(estimate)
+
+    assert "$0.66" in line
+    assert "claude-opus-4-8" in line
+    assert "estimate" in line.lower()
+
+
+def test_cost_estimate_is_honest_when_a_model_has_no_price() -> None:
+    estimate = CostEstimate(
+        model="mystery",
+        expected_turns=12,
+        input_tokens=1,
+        output_tokens=1,
+        usd=None,
+    )
+
+    line = format_cost_estimate(estimate)
+
+    assert "mystery" in line
+    assert "$" not in line
+
+
+def test_cost_summary_reports_tokens_and_an_estimated_dollar_cost() -> None:
+    summary = format_cost_summary(
+        CostSummary(
+            per_model=(ModelCost("claude-opus-4-8", 70_000, 5_900, 0.66),),
+            total_tokens=75_900,
+            usd=0.66,
+        )
+    )
+
+    assert "75,900" in summary
+    assert "$0.66" in summary
+    assert "estimate" in summary.lower()
+
+
+def test_cost_summary_breaks_each_model_into_input_and_output() -> None:
+    summary = format_cost_summary(
+        CostSummary(
+            per_model=(
+                ModelCost("claude-sonnet-4-6", 120_000, 9_000, 0.49),
+                ModelCost("claude-opus-4-8", 8_000, 4_000, 0.14),
+            ),
+            total_tokens=141_000,
+            usd=0.63,
+        )
+    )
+
+    assert "claude-sonnet-4-6" in summary
+    assert "claude-opus-4-8" in summary
+    assert "120,000" in summary
+    assert "9,000" in summary
+    assert "$0.49" in summary
+
+
+def test_cost_summary_flags_models_it_could_not_price() -> None:
+    summary = format_cost_summary(
+        CostSummary(
+            per_model=(ModelCost("mystery", 500, 500, None),),
+            total_tokens=1_000,
+            usd=0.0,
+        )
+    )
+
+    assert "mystery" in summary
+    assert "price not configured" in summary

@@ -25,15 +25,25 @@ class ProviderCatalog(BaseModel):
         return self
 
 
+class ModelPrice(BaseModel):
+    input: float
+    output: float
+
+
 class Catalog(BaseModel):
     providers: dict[str, ProviderCatalog] = {}
     agents: dict[str, str] = {}
+    prices: dict[str, ModelPrice] = {}
 
 
 def _parse(text: str, source: str) -> Catalog:
     try:
         data: dict[str, Any] = tomllib.loads(text)
-        return Catalog(providers=data.get("providers", {}), agents=data.get("agents", {}))
+        return Catalog(
+            providers=data.get("providers", {}),
+            agents=data.get("agents", {}),
+            prices=data.get("prices", {}),
+        )
     except (tomllib.TOMLDecodeError, ValidationError) as exc:
         raise CatalogError(f"Could not read the model catalog at {source}: {exc}") from exc
 
@@ -52,4 +62,5 @@ def load_catalog(data_dir: Path) -> Catalog:
     return Catalog(
         providers={**catalog.providers, **user.providers},
         agents={**catalog.agents, **user.agents},
+        prices={**catalog.prices, **user.prices},
     )
