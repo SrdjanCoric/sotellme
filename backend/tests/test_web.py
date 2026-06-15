@@ -40,9 +40,7 @@ def test_no_state_is_the_setup_phase() -> None:
 
 
 def test_a_snapshot_awaiting_the_level_is_the_level_phase() -> None:
-    snapshot = SessionSnapshot(
-        thread_id="t1", question=None, needs_level=True, profile=profile()
-    )
+    snapshot = SessionSnapshot(thread_id="t1", question=None, needs_level=True, profile=profile())
 
     state = state_from_snapshot(snapshot)
 

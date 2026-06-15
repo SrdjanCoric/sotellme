@@ -309,9 +309,7 @@ def _env_cap(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
-def build_engine(
-    config: ModelConfig, callbacks: list[BaseCallbackHandler]
-) -> InterviewEngine:
+def build_engine(config: ModelConfig, callbacks: list[BaseCallbackHandler]) -> InterviewEngine:
     return InterviewEngine(
         data_dir=_data_dir(),
         profile_parser=_build_profile_parser(config),

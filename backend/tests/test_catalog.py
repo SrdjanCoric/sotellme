@@ -23,7 +23,7 @@ def test_loading_without_an_override_is_the_default(tmp_path: Path) -> None:
 
 def test_a_user_override_replaces_one_provider_and_leaves_the_rest(tmp_path: Path) -> None:
     (tmp_path / "models.toml").write_text(
-        '[providers.anthropic]\n'
+        "[providers.anthropic]\n"
         'fast = "claude-haiku-4-5-20251001"\n'
         'smart = "claude-opus-4-8"\n'
         'models = ["claude-opus-4-8", "claude-haiku-4-5-20251001"]\n'
