@@ -50,7 +50,8 @@ gets written to a Markdown report, and it prints you the path.
 
 It tells you what the run costs. Before the interview starts it shows a rough estimate
 for the model you picked, and when it ends it prints the tokens it used and what they
-cost, broken out by model and by input versus output. The prices ship with the tool as a
+cost, broken out by model and by input versus output. When the provider caches the
+repeated system prompt it also notes what that saved. The prices ship with the tool as a
 static list, so they're estimates; check your provider's current rates when the number
 matters.
 
@@ -121,7 +122,8 @@ picker shows. In the web app's Advanced section you can go finer and set a model
 own, a cheap one for the company research and a stronger one for the questions and the
 grading, mixing providers once you've set more than one key. The file holds model names
 only; your API keys stay in the environment. It also carries the per-model prices behind
-the cost estimates, so you can correct a rate that's drifted.
+the cost estimates, including the reduced rate for cached input, so you can correct a rate
+that's drifted.
 
 The session has a token budget, 400,000 by default, that ends the interview early if a
 run goes long and keeps a reserved share back to grade and coach what you gave. Change it

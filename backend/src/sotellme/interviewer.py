@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 
+from sotellme.caching import cache_system_prompt
 from sotellme.profile import CandidateProfile
 from sotellme.prompts import (
     FOLLOW_UP_DIRECTIVE_TEMPLATE,
@@ -65,8 +66,9 @@ def render_directive(decision: "DirectorDecision") -> str:
 
 
 class LLMInterviewer:
-    def __init__(self, model: BaseChatModel) -> None:
+    def __init__(self, model: BaseChatModel, provider: str = "") -> None:
         self._model = model
+        self._provider = provider
 
     def question_for(
         self,
@@ -76,19 +78,24 @@ class LLMInterviewer:
         brief: str,
         transcript: Sequence[Turn],
     ) -> str:
-        messages = question_messages(
-            role_details=render_role_context(context),
-            brief=brief,
-            profile_text=render_profile(profile),
-            transcript_text=render_transcript(transcript),
-            directive=render_directive(decision),
+        messages = cache_system_prompt(
+            question_messages(
+                role_details=render_role_context(context),
+                brief=brief,
+                profile_text=render_profile(profile),
+                transcript_text=render_transcript(transcript),
+                directive=render_directive(decision),
+            ),
+            self._provider,
         )
         return sanitize(self._model.invoke(messages).text)
 
     def closing_turn(self, transcript: Sequence[Turn]) -> str:
-        messages = closing_messages(render_transcript(transcript))
+        messages = cache_system_prompt(
+            closing_messages(render_transcript(transcript)), self._provider
+        )
         return sanitize(self._model.invoke(messages).text)
 
     def redirect_turn(self, question: str) -> str:
-        messages = redirect_messages(question)
+        messages = cache_system_prompt(redirect_messages(question), self._provider)
         return sanitize(self._model.invoke(messages).text)

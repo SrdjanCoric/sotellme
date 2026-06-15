@@ -6,6 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 
 from sotellme.assessor import StarFlags
+from sotellme.caching import cache_system_prompt
 from sotellme.interviewer import Turn, render_transcript
 from sotellme.prompts import grader_messages
 from sotellme.role import TargetLevel
@@ -77,15 +78,21 @@ _GRADE_RETRY_ATTEMPTS = 3
 
 
 def grade_session(
-    transcript: Sequence[Turn], target_level: TargetLevel, model: BaseChatModel
+    transcript: Sequence[Turn],
+    target_level: TargetLevel,
+    model: BaseChatModel,
+    provider: str = "",
 ) -> SessionGrade:
     structured = model.with_structured_output(SessionGrade).with_retry(
         retry_if_exception_type=(ValidationError, OutputParserException),
         wait_exponential_jitter=False,
         stop_after_attempt=_GRADE_RETRY_ATTEMPTS,
     )
+    messages = cache_system_prompt(
+        grader_messages(target_level, render_transcript(transcript)), provider
+    )
     try:
-        result = structured.invoke(grader_messages(target_level, render_transcript(transcript)))
+        result = structured.invoke(messages)
     except (ValidationError, OutputParserException) as exc:
         raise GradingError(_GRADE_FAILURE_MESSAGE) from exc
     if not isinstance(result, SessionGrade):

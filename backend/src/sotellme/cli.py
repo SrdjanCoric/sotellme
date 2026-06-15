@@ -117,10 +117,14 @@ def format_cost_summary(summary: CostSummary) -> str:
     lines = [
         f"Tokens used: {summary.total_tokens:,} · estimated cost: ${summary.usd:.2f} (estimate)."
     ]
+    if summary.saved_usd > 0:
+        lines.append(f"Prompt caching saved about ${summary.saved_usd:.2f} (estimate).")
     for entry in summary.per_model:
         cost = f"${entry.usd:.2f}" if entry.usd is not None else "price not configured"
+        cached = f" ({entry.cached_input_tokens:,} cached)" if entry.cached_input_tokens else ""
         lines.append(
-            f"  {entry.model}: {entry.input_tokens:,} in / {entry.output_tokens:,} out · {cost}"
+            f"  {entry.model}: {entry.input_tokens:,} in{cached} / "
+            f"{entry.output_tokens:,} out · {cost}"
         )
     return "\n".join(lines)
 
@@ -289,29 +293,34 @@ def _data_dir() -> Path:
 
 def _build_profile_parser(config: ModelConfig) -> ProfileParser:
     model = build_chat_model(config, "parser")
-    return lambda cv_text: parse_candidate_profile(cv_text, model)
+    provider = config.agents["parser"].provider
+    return lambda cv_text: parse_candidate_profile(cv_text, model, provider)
 
 
 def _build_assessor(config: ModelConfig) -> Assessor:
     model = build_chat_model(config, "assessor")
-    return lambda topic, transcript: assess_answer(topic, transcript, model)
+    provider = config.agents["assessor"].provider
+    return lambda topic, transcript: assess_answer(topic, transcript, model, provider)
 
 
 def _build_director(config: ModelConfig) -> Director:
-    return LLMDirector(build_chat_model(config, "director"))
+    return LLMDirector(build_chat_model(config, "director"), config.agents["director"].provider)
 
 
 def _build_interviewer(config: ModelConfig) -> Interviewer:
-    return LLMInterviewer(build_chat_model(config, "interviewer"))
+    return LLMInterviewer(
+        build_chat_model(config, "interviewer"), config.agents["interviewer"].provider
+    )
 
 
 def _build_guardrail(config: ModelConfig) -> Guardrail:
-    return LLMGuardrail(build_chat_model(config, "guardrail"))
+    return LLMGuardrail(build_chat_model(config, "guardrail"), config.agents["guardrail"].provider)
 
 
 def _build_role_builder(config: ModelConfig) -> RoleBuilder:
     model = build_chat_model(config, "role_builder")
-    return lambda posting_text: build_role_context(posting_text, model)
+    provider = config.agents["role_builder"].provider
+    return lambda posting_text: build_role_context(posting_text, model, provider)
 
 
 def _build_researcher(config: ModelConfig) -> Researcher:
@@ -325,13 +334,15 @@ def _build_researcher(config: ModelConfig) -> Researcher:
 
 def _build_grader(config: ModelConfig) -> Grader:
     model = build_chat_model(config, "grader")
-    return lambda transcript, target_level: grade_session(transcript, target_level, model)
+    provider = config.agents["grader"].provider
+    return lambda transcript, target_level: grade_session(transcript, target_level, model, provider)
 
 
 def _build_coacher(config: ModelConfig) -> Coacher:
     model = build_chat_model(config, "coach")
+    provider = config.agents["coach"].provider
     return lambda transcript, grade, target_level: coach_session(
-        transcript, grade, target_level, model
+        transcript, grade, target_level, model, provider
     )
 
 
@@ -458,7 +469,7 @@ def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_
     transcript = parse_transcript(text)
     model = build_chat_model(config, "grader")
     with console.status("Grading the transcript..."):
-        grade = grade_session(transcript, level, model)
+        grade = grade_session(transcript, level, model, config.agents["grader"].provider)
     console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
 
 

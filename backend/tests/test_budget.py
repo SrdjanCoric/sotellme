@@ -18,14 +18,17 @@ from sotellme.pricing import (
 )
 
 
-def llm_result(model: str, input_tokens: int, output_tokens: int) -> LLMResult:
+def llm_result(model: str, input_tokens: int, output_tokens: int, cache_read: int = 0) -> LLMResult:
+    usage_metadata: dict[str, object] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+    if cache_read:
+        usage_metadata["input_token_details"] = {"cache_read": cache_read}
     message = AIMessage(
         content="",
-        usage_metadata={
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        },
+        usage_metadata=usage_metadata,
         response_metadata={"model_name": model},
     )
     return LLMResult(generations=[[ChatGeneration(message=message)]])
@@ -92,6 +95,25 @@ def test_the_callback_keeps_usage_per_model() -> None:
     assert usage["claude-sonnet-4-6"].input_tokens == 110
     assert usage["claude-sonnet-4-6"].output_tokens == 55
     assert usage["claude-opus-4-8"].input_tokens == 200
+
+
+def test_the_callback_captures_cache_read_tokens_per_model() -> None:
+    counter = BudgetCallback()
+
+    counter.on_llm_end(llm_result("claude-sonnet-4-6", 1_000, 50, cache_read=800), run_id=uuid4())
+    counter.on_llm_end(llm_result("claude-sonnet-4-6", 1_000, 50, cache_read=900), run_id=uuid4())
+
+    usage = counter.usage
+    assert usage["claude-sonnet-4-6"].input_tokens == 2_000
+    assert usage["claude-sonnet-4-6"].cached_input_tokens == 1_700
+
+
+def test_a_response_without_a_cache_field_reports_no_cached_tokens() -> None:
+    counter = BudgetCallback()
+
+    counter.on_llm_end(llm_result("gpt-5.5", 1_000, 50), run_id=uuid4())
+
+    assert counter.usage["gpt-5.5"].cached_input_tokens == 0
 
 
 def test_the_callback_ignores_responses_without_token_usage() -> None:

@@ -4,6 +4,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 
+from sotellme.caching import cache_system_prompt
 from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn, render_transcript
 from sotellme.prompts import coach_messages
@@ -92,6 +93,7 @@ def coach_session(
     grade: SessionGrade,
     target_level: TargetLevel,
     model: BaseChatModel,
+    provider: str = "",
 ) -> CoachReport:
     if not grade.scores:
         return CoachReport(summary="", answer_advice=[], drills=[], study_plan="")
@@ -100,10 +102,11 @@ def coach_session(
         wait_exponential_jitter=False,
         stop_after_attempt=_COACH_RETRY_ATTEMPTS,
     )
+    messages = cache_system_prompt(
+        coach_messages(target_level, render_transcript(transcript), render_grade(grade)), provider
+    )
     try:
-        result = structured.invoke(
-            coach_messages(target_level, render_transcript(transcript), render_grade(grade))
-        )
+        result = structured.invoke(messages)
     except (ValidationError, OutputParserException) as exc:
         raise CoachingError(_COACH_FAILURE_MESSAGE) from exc
     if not isinstance(result, CoachReport):

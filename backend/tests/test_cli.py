@@ -327,6 +327,36 @@ def test_cost_summary_breaks_each_model_into_input_and_output() -> None:
     assert "$0.49" in summary
 
 
+def test_cost_summary_reports_cached_tokens_and_estimated_savings() -> None:
+    summary = format_cost_summary(
+        CostSummary(
+            per_model=(
+                ModelCost("claude-opus-4-8", 70_000, 5_900, 0.40, cached_input_tokens=50_000),
+            ),
+            total_tokens=75_900,
+            usd=0.40,
+            saved_usd=0.30,
+        )
+    )
+
+    assert "50,000 cached" in summary
+    assert "$0.30" in summary
+    assert "saved" in summary.lower()
+
+
+def test_cost_summary_stays_quiet_about_caching_when_nothing_was_cached() -> None:
+    summary = format_cost_summary(
+        CostSummary(
+            per_model=(ModelCost("claude-opus-4-8", 70_000, 5_900, 0.66),),
+            total_tokens=75_900,
+            usd=0.66,
+        )
+    )
+
+    assert "cached" not in summary.lower()
+    assert "saved" not in summary.lower()
+
+
 def test_cost_summary_flags_models_it_could_not_price() -> None:
     summary = format_cost_summary(
         CostSummary(

@@ -35,6 +35,7 @@ class CostEstimate:
 class ModelUsage:
     input_tokens: int
     output_tokens: int
+    cached_input_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class ModelCost:
     input_tokens: int
     output_tokens: int
     usd: float | None
+    cached_input_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -50,10 +52,21 @@ class CostSummary:
     per_model: tuple[ModelCost, ...]
     total_tokens: int
     usd: float
+    saved_usd: float = 0.0
 
 
-def cost_usd(price: ModelPrice, input_tokens: int, output_tokens: int) -> float:
-    return (input_tokens * price.input + output_tokens * price.output) / 1_000_000
+def cost_usd(
+    price: ModelPrice,
+    input_tokens: int,
+    output_tokens: int,
+    cached_input_tokens: int = 0,
+) -> float:
+    uncached_input = input_tokens - cached_input_tokens
+    return (
+        uncached_input * price.input
+        + cached_input_tokens * price.cached_input_rate
+        + output_tokens * price.output
+    ) / 1_000_000
 
 
 def expected_session_tokens(expected_turns: int) -> tuple[int, int]:
@@ -90,14 +103,18 @@ def summarize_actual_cost(
     per_model: list[ModelCost] = []
     total_tokens = 0
     usd = 0.0
+    saved_usd = 0.0
     for model in sorted(usage):
         used = usage[model]
         total_tokens += used.input_tokens + used.output_tokens
-        model_usd = (
-            cost_usd(prices[model], used.input_tokens, used.output_tokens)
-            if model in prices
-            else None
-        )
+        price = prices.get(model)
+        if price is not None:
+            model_usd: float | None = cost_usd(
+                price, used.input_tokens, used.output_tokens, used.cached_input_tokens
+            )
+            saved_usd += used.cached_input_tokens * (price.input - price.cached_input_rate) / 1e6
+        else:
+            model_usd = None
         if model_usd is not None:
             usd += model_usd
         per_model.append(
@@ -106,6 +123,9 @@ def summarize_actual_cost(
                 input_tokens=used.input_tokens,
                 output_tokens=used.output_tokens,
                 usd=model_usd,
+                cached_input_tokens=used.cached_input_tokens,
             )
         )
-    return CostSummary(per_model=tuple(per_model), total_tokens=total_tokens, usd=usd)
+    return CostSummary(
+        per_model=tuple(per_model), total_tokens=total_tokens, usd=usd, saved_usd=saved_usd
+    )

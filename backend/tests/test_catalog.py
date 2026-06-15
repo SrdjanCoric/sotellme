@@ -14,6 +14,19 @@ def test_the_default_catalog_prices_the_recommended_anthropic_models() -> None:
     assert prices["claude-sonnet-4-6"].output == 15.0
 
 
+def test_the_default_catalog_prices_cached_input_below_the_full_input_rate() -> None:
+    prices = default_catalog().prices
+
+    # Anthropic reads cached input at 10% of the input rate.
+    assert prices["claude-opus-4-8"].cached_input == 0.5
+    # OpenAI at 50%, Gemini at 25%.
+    assert prices["gpt-5.5"].cached_input == 2.5
+    assert prices["gemini-3.1-pro-preview"].cached_input == 0.5
+    for price in prices.values():
+        assert price.cached_input is not None
+        assert price.cached_input < price.input
+
+
 def test_default_catalog_lists_the_three_providers_with_their_tier_defaults() -> None:
     catalog = default_catalog()
 
