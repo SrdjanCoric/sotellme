@@ -138,3 +138,14 @@ def test_closing_turn_carries_the_transcript() -> None:
     assert closing == "That covers it, thanks."
     human_texts = [text for role, text in model.seen_inputs[0] if role == "human"]
     assert "Q: What happened?\nA: We migrated." in human_texts[0]
+
+
+def test_redirect_turn_points_back_to_the_question_and_is_sanitized() -> None:
+    model = StubChatModel(text_response="  Let's stay with the interview—back to my question.  ")
+    interviewer = LLMInterviewer(model)
+
+    redirect = interviewer.redirect_turn("What problem was openroster solving?")
+
+    assert redirect == "Let's stay with the interview - back to my question."
+    human_texts = [text for role, text in model.seen_inputs[0] if role == "human"]
+    assert "What problem was openroster solving?" in human_texts[0]

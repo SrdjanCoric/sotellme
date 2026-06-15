@@ -27,6 +27,7 @@ from sotellme.engine import (
     Director,
     EngineError,
     Grader,
+    Guardrail,
     InterviewEngine,
     Interviewer,
     ProfileParser,
@@ -37,6 +38,7 @@ from sotellme.engine import (
 from sotellme.extraction import CVInputError
 from sotellme.fetch import fetch_research_page
 from sotellme.grader import GradingError, SessionGrade, grade_session
+from sotellme.guardrail import LLMGuardrail
 from sotellme.interviewer import LLMInterviewer, Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import ProfileParseError, parse_candidate_profile
@@ -272,6 +274,10 @@ def _build_interviewer(config: ModelConfig) -> Interviewer:
     return LLMInterviewer(build_chat_model(config, "interviewer"))
 
 
+def _build_guardrail(config: ModelConfig) -> Guardrail:
+    return LLMGuardrail(build_chat_model(config, "guardrail"))
+
+
 def _build_role_builder(config: ModelConfig) -> RoleBuilder:
     model = build_chat_model(config, "role_builder")
     return lambda posting_text: build_role_context(posting_text, model)
@@ -320,6 +326,7 @@ def build_engine(config: ModelConfig, callbacks: list[BaseCallbackHandler]) -> I
         researcher=_build_researcher(config),
         grader=_build_grader(config),
         coacher=_build_coacher(config),
+        guardrail=_build_guardrail(config),
         question_cap=_env_cap("SOTELLME_QUESTION_CAP", DEFAULT_QUESTION_CAP),
         follow_up_cap=_env_cap("SOTELLME_FOLLOW_UP_CAP", DEFAULT_FOLLOW_UP_CAP),
         callbacks=callbacks,

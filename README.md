@@ -35,6 +35,11 @@ mentioned but never explained, instead of marching through a checklist. The limi
 can't cross (a cap on questions, a guaranteed closing question, a ceiling on web
 fetches) are plain code, and they're unit-tested.
 
+It also screens what you type before it reaches the interview. Go off-topic, or try to
+talk it into doing something else, and it nudges you back to the question; the second
+off-topic reply in a row wraps the session up. Anything genuinely abusive ends it on one
+calm line. Either way, the real answers you gave still get graded.
+
 Once you're done, the smart model reads the whole transcript and scores every answer on
 STAR structure, specificity, and ownership against your target level, then prints a
 scorecard that names what's weak in each one. The coach takes those scores and turns

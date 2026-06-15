@@ -10,6 +10,7 @@ from sotellme.prompts import (
     NEW_TOPIC_DIRECTIVE_TEMPLATE,
     closing_messages,
     question_messages,
+    redirect_messages,
 )
 from sotellme.role import RoleContext
 from sotellme.voice import sanitize
@@ -86,4 +87,8 @@ class LLMInterviewer:
 
     def closing_turn(self, transcript: Sequence[Turn]) -> str:
         messages = closing_messages(render_transcript(transcript))
+        return sanitize(self._model.invoke(messages).text)
+
+    def redirect_turn(self, question: str) -> str:
+        messages = redirect_messages(question)
         return sanitize(self._model.invoke(messages).text)

@@ -179,6 +179,7 @@ AGENT_STEP_LABELS = {
     "director": "Choosing the next question",
     "interviewer": "Writing the question",
     "assessor": "Weighing your answer",
+    "guardrail": "Checking your reply",
     "grader": "Grading your answers",
     "coach": "Writing your coaching",
 }

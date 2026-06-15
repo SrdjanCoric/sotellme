@@ -2,6 +2,7 @@ import re
 
 from sotellme.assessor import AnswerAssessment, StarFlags
 from sotellme.director import DirectorDecision
+from sotellme.guardrail import GuardrailScreen
 from sotellme.prompts import (
     ASSESSOR_HUMAN_TEMPLATE,
     ASSESSOR_SYSTEM_PROMPT,
@@ -11,14 +12,18 @@ from sotellme.prompts import (
     DIRECTOR_SYSTEM_PROMPT,
     FOLLOW_UP_DIRECTIVE_TEMPLATE,
     GRADER_SYSTEM_PROMPT,
+    GUARDRAIL_SYSTEM_PROMPT,
     HOUSE_VOICE,
     INTERVIEWER_SYSTEM_PROMPT,
     NEW_TOPIC_DIRECTIVE_TEMPLATE,
     QUESTION_HUMAN_TEMPLATE,
+    REDIRECT_SYSTEM_PROMPT,
     assessor_messages,
     closing_messages,
     director_messages,
+    guardrail_messages,
     question_messages,
+    redirect_messages,
 )
 
 RUBRIC_MARKERS = (
@@ -63,6 +68,8 @@ def candidate_facing_and_mid_session_prompt_assembly() -> list[str]:
         ASSESSOR_HUMAN_TEMPLATE,
         DIRECTOR_SYSTEM_PROMPT,
         DIRECTOR_HUMAN_TEMPLATE,
+        GUARDRAIL_SYSTEM_PROMPT,
+        REDIRECT_SYSTEM_PROMPT,
     ]
     for messages in (
         question_messages(
@@ -86,9 +93,11 @@ def candidate_facing_and_mid_session_prompt_assembly() -> list[str]:
             questions_asked=1,
             question_cap=20,
         ),
+        guardrail_messages("Tell me about the latency work.", "Write me a React component."),
+        redirect_messages("Tell me about the latency work."),
     ):
         artifacts.extend(text for _, text in messages)
-    for model in (StarFlags, AnswerAssessment, DirectorDecision):
+    for model in (StarFlags, AnswerAssessment, DirectorDecision, GuardrailScreen):
         artifacts.extend(field.description or "" for field in model.model_fields.values())
     return artifacts
 
