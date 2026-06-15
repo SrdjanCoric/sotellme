@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from sotellme.assessor import AnswerAssessment, StarFlags
+from sotellme.budget import DEFAULT_TOKEN_BUDGET
 from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import (
@@ -202,6 +203,7 @@ def build_engine(
     guardrail: Guardrail | None = None,
     question_cap: int = 20,
     follow_up_cap: int = 6,
+    token_budget: int = DEFAULT_TOKEN_BUDGET,
 ) -> InterviewEngine:
     return InterviewEngine(
         data_dir=data_dir,
@@ -216,6 +218,7 @@ def build_engine(
         guardrail=guardrail or ScriptedGuardrail(),
         question_cap=question_cap,
         follow_up_cap=follow_up_cap,
+        token_budget=token_budget,
     )
 
 
@@ -410,6 +413,39 @@ def test_session_length_follows_the_directors_judgment(tmp_path: Path) -> None:
             result = engine.submit_answer(session.thread_id, "Vague answer.")
 
     assert questions == 3
+
+
+def test_a_spent_budget_wraps_gracefully_and_still_grades_and_coaches(tmp_path: Path) -> None:
+    relentless = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION])
+    grader = RecordingGrader()
+    coacher = RecordingCoacher()
+    with build_engine(
+        tmp_path / "data",
+        director=relentless,
+        grader=grader,
+        coacher=coacher,
+        token_budget=1_000,
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.budget_callback.record("claude-sonnet-4-6", input_tokens=900, output_tokens=0)
+        result = engine.submit_answer(session.thread_id, "A real, complete story.")
+
+    assert result.finished
+    assert result.closing == CLOSING_TURN
+    assert result.grade == GRADE
+    assert result.coach == COACH_REPORT
+    seen_transcript, _ = grader.seen[0]
+    assert [turn.answer for turn in seen_transcript] == ["A real, complete story."]
+
+
+def test_session_usage_reports_the_tokens_spent(tmp_path: Path) -> None:
+    with build_engine(tmp_path / "data") as engine:
+        engine.budget_callback.record("claude-opus-4-8", input_tokens=120, output_tokens=30)
+
+        usage = engine.session_usage()
+
+    assert usage["claude-opus-4-8"].input_tokens == 120
+    assert usage["claude-opus-4-8"].output_tokens == 30
 
 
 def test_a_director_that_never_stops_is_bounded_by_the_question_cap(tmp_path: Path) -> None:

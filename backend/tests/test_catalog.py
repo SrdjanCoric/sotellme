@@ -5,6 +5,15 @@ import pytest
 from sotellme.catalog import CatalogError, default_catalog, load_catalog
 
 
+def test_the_default_catalog_prices_the_recommended_anthropic_models() -> None:
+    prices = default_catalog().prices
+
+    assert prices["claude-opus-4-8"].input == 5.0
+    assert prices["claude-opus-4-8"].output == 25.0
+    assert prices["claude-sonnet-4-6"].input == 3.0
+    assert prices["claude-sonnet-4-6"].output == 15.0
+
+
 def test_default_catalog_lists_the_three_providers_with_their_tier_defaults() -> None:
     catalog = default_catalog()
 
@@ -39,6 +48,18 @@ def test_a_user_override_can_add_agent_assignments(tmp_path: Path) -> None:
     (tmp_path / "models.toml").write_text('[agents]\nresearcher = "openai:gpt-5.4-mini"\n')
 
     assert load_catalog(tmp_path).agents == {"researcher": "openai:gpt-5.4-mini"}
+
+
+def test_a_user_override_can_replace_a_models_price(tmp_path: Path) -> None:
+    (tmp_path / "models.toml").write_text(
+        '[prices."claude-opus-4-8"]\ninput = 9.0\noutput = 40.0\n'
+    )
+
+    catalog = load_catalog(tmp_path)
+
+    assert catalog.prices["claude-opus-4-8"].input == 9.0
+    assert catalog.prices["claude-opus-4-8"].output == 40.0
+    assert catalog.prices["claude-sonnet-4-6"].input == 3.0
 
 
 def test_malformed_override_raises_a_catalog_error(tmp_path: Path) -> None:

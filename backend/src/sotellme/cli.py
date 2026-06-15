@@ -4,7 +4,7 @@ import json
 import os
 import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from sotellme.assessor import AssessorError, assess_answer
-from sotellme.catalog import CatalogError, load_catalog
+from sotellme.catalog import CatalogError, ModelPrice, load_catalog
 from sotellme.coach import CoachingError, CoachReport, coach_session
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
 from sotellme.coverage import DEFAULT_FOLLOW_UP_CAP, DEFAULT_QUESTION_CAP
@@ -41,6 +41,13 @@ from sotellme.grader import GradingError, SessionGrade, grade_session
 from sotellme.guardrail import LLMGuardrail
 from sotellme.interviewer import LLMInterviewer, Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
+from sotellme.pricing import (
+    TYPICAL_TURNS,
+    CostEstimate,
+    CostSummary,
+    estimate_session_cost,
+    summarize_actual_cost,
+)
 from sotellme.profile import ProfileParseError, parse_candidate_profile
 from sotellme.report import list_reports, write_report
 from sotellme.research import build_company_brief
@@ -92,6 +99,30 @@ def format_report_list(reports: Sequence[Path]) -> str:
     if not reports:
         return NO_REPORTS_MESSAGE
     return "\n".join(report.name for report in reports)
+
+
+def format_cost_estimate(estimate: CostEstimate) -> str:
+    if estimate.usd is None:
+        return (
+            f"No price configured for {estimate.model}, "
+            "so this interview's cost can't be estimated."
+        )
+    return (
+        f"Estimated cost: about ${estimate.usd:.2f} for a ~{estimate.expected_turns}-question "
+        f"interview on {estimate.model} (rough estimate; the real figure follows at the end)."
+    )
+
+
+def format_cost_summary(summary: CostSummary) -> str:
+    lines = [
+        f"Tokens used: {summary.total_tokens:,} · estimated cost: ${summary.usd:.2f} (estimate)."
+    ]
+    for entry in summary.per_model:
+        cost = f"${entry.usd:.2f}" if entry.usd is not None else "price not configured"
+        lines.append(
+            f"  {entry.model}: {entry.input_tokens:,} in / {entry.output_tokens:,} out · {cost}"
+        )
+    return "\n".join(lines)
 
 
 LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff)"
@@ -364,7 +395,12 @@ def _run_web(console: Console) -> int:
     return subprocess.call(streamlit_run_command(web_module, sys.executable))
 
 
-def _run_session(console: Console, engine: InterviewEngine, session: SessionSnapshot) -> None:
+def _run_session(
+    console: Console,
+    engine: InterviewEngine,
+    session: SessionSnapshot,
+    prices: Mapping[str, ModelPrice],
+) -> None:
     interactive = _interactive()
     answer_session = _build_answer_session() if interactive else None
     level_session: PromptSession[str] | None = PromptSession() if interactive else None
@@ -405,6 +441,8 @@ def _run_session(console: Console, engine: InterviewEngine, session: SessionSnap
         console.print(f"\n[bold]Your full coaching report:[/bold] {path}")
     else:
         console.print(f"\n[dim]{NO_COACHING_MESSAGE}[/dim]")
+    summary = summarize_actual_cost(engine.session_usage(), prices)
+    console.print(f"\n[dim]{format_cost_summary(summary)}[/dim]")
 
 
 def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_level: str) -> None:
@@ -437,12 +475,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "web":
         return _run_web(console)
     try:
+        catalog = load_catalog(_data_dir())
         config = resolve_model_config(
             env=os.environ,
             provider=args.provider,
             fast_model=args.fast_model,
             smart_model=args.smart_model,
-            catalog=load_catalog(_data_dir()),
+            catalog=catalog,
         )
         if args.command == "grade":
             _run_grade(console, config, args.transcript, args.level)
@@ -450,6 +489,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         posting_text = None
         if args.command == "interview" and args.job:
             posting_text = resolve_posting_text(args.job)
+        if args.command == "interview":
+            estimate = estimate_session_cost(config.smart_model, TYPICAL_TURNS, catalog.prices)
+            console.print(f"[dim]{format_cost_estimate(estimate)}[/dim]")
         callbacks = langfuse_callbacks(os.environ)
         engine = build_engine(config, callbacks)
         with engine:
@@ -463,7 +505,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     session = engine.start(Path(args.cv), posting_text=posting_text)
             else:
                 session = engine.resume_latest()
-            _run_session(console, engine, session)
+            _run_session(console, engine, session, catalog.prices)
     except (
         ModelConfigError,
         CatalogError,

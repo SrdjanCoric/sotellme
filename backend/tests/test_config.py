@@ -72,7 +72,7 @@ def test_openai_provider_defaults_and_key_var() -> None:
 def test_google_provider_defaults_and_key_var() -> None:
     config = resolve_model_config(provider="google_genai", env={"GOOGLE_API_KEY": "k"})
 
-    assert config.fast_model == "gemini-3.1-pro-preview"
+    assert config.fast_model == "gemini-3.5-flash"
     assert config.smart_model == "gemini-3.1-pro-preview"
 
     with pytest.raises(ModelConfigError, match="GOOGLE_API_KEY"):
