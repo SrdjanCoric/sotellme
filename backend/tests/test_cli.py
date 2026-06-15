@@ -2,19 +2,23 @@ from pathlib import Path
 
 import pytest
 
+import sotellme.cli as cli
 from sotellme.assessor import StarFlags
 from sotellme.cli import (
     NO_REPORTS_MESSAGE,
     TranscriptInputError,
     ask_target_level,
+    build_engine,
     build_parser,
     format_report_list,
     format_score_summary,
     parse_target_level,
     parse_transcript,
     read_multiline_answer,
+    streamlit_run_command,
     strip_done_sentinel,
 )
+from sotellme.config import AGENT_ROLES, resolve_model_config
 from sotellme.grader import AnswerScore, SessionGrade
 
 
@@ -131,6 +135,33 @@ def test_reports_command_parses() -> None:
     args = build_parser().parse_args(["reports"])
 
     assert args.command == "reports"
+
+
+def test_web_command_parses() -> None:
+    args = build_parser().parse_args(["web"])
+
+    assert args.command == "web"
+
+
+def test_streamlit_run_command_launches_the_web_module_with_a_calm_accent() -> None:
+    command = streamlit_run_command(Path("/pkg/web.py"), "/usr/bin/python")
+
+    assert command[:5] == ["/usr/bin/python", "-m", "streamlit", "run", "/pkg/web.py"]
+    assert command[5] == "--theme.primaryColor=#4f6d7a"
+    assert command[6] == "--client.toolbarMode=minimal"
+
+
+def test_build_engine_wires_every_agent_from_its_own_role(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SOTELLME_DATA_DIR", str(tmp_path))
+    requested: list[str] = []
+    monkeypatch.setattr(cli, "build_chat_model", lambda config, key: requested.append(key))
+    config = resolve_model_config(provider="anthropic", env={"ANTHROPIC_API_KEY": "k"})
+
+    build_engine(config, [])
+
+    assert set(requested) == set(AGENT_ROLES)
 
 
 def test_format_report_list_names_each_report() -> None:

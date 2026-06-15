@@ -110,11 +110,17 @@ class InterviewState(TypedDict, total=False):
     coach: CoachReport
 
 
-class SessionHandle(BaseModel):
+class SessionSnapshot(BaseModel):
     thread_id: str
-    question: str | None
-    needs_level: bool
     profile: CandidateProfile
+    needs_level: bool
+    level: TargetLevel | None = None
+    question: str | None = None
+    transcript: list[Turn] = []
+    finished: bool = False
+    closing: str | None = None
+    grade: SessionGrade | None = None
+    coach: CoachReport | None = None
 
 
 class TurnResult(BaseModel):
@@ -299,7 +305,7 @@ class InterviewEngine:
         serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED_TYPES)
         self._graph = graph.compile(checkpointer=SqliteSaver(self._conn, serde=serde))
 
-    def start(self, cv_path: Path, posting_text: str | None = None) -> SessionHandle:
+    def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
         thread_id = uuid.uuid4().hex
         initial: InterviewState = {"cv_path": str(cv_path)}
         if posting_text is not None:
@@ -308,13 +314,19 @@ class InterviewEngine:
         (self._data_dir / "latest").write_text(thread_id)
         return self._pending_session(thread_id)
 
-    def resume_latest(self) -> SessionHandle:
+    def resume_latest(self) -> SessionSnapshot:
+        return self._pending_session(self._latest_thread())
+
+    def snapshot_latest(self) -> SessionSnapshot:
+        return self._snapshot(self._latest_thread())
+
+    def _latest_thread(self) -> str:
         latest = self._data_dir / "latest"
         if not latest.exists():
             raise EngineError("No session to resume. Start one with: sotellme interview")
-        return self._pending_session(latest.read_text().strip())
+        return latest.read_text().strip()
 
-    def submit_level(self, thread_id: str, level: TargetLevel) -> SessionHandle:
+    def submit_level(self, thread_id: str, level: TargetLevel) -> SessionSnapshot:
         if level not in get_args(TargetLevel):
             valid = ", ".join(get_args(TargetLevel))
             raise EngineError(f"Unknown level {level!r}: choose one of {valid}.")
@@ -351,14 +363,27 @@ class InterviewEngine:
     def _config(self, thread_id: str) -> RunnableConfig:
         return {"configurable": {"thread_id": thread_id}, "callbacks": self._callbacks}
 
-    def _pending_session(self, thread_id: str) -> SessionHandle:
-        state = self._graph.get_state(self._config(thread_id))
-        if not state.next:
+    def _pending_session(self, thread_id: str) -> SessionSnapshot:
+        snapshot = self._snapshot(thread_id)
+        if snapshot.finished:
             raise EngineError("The last session is already finished. Start a new one.")
+        return snapshot
+
+    def _snapshot(self, thread_id: str) -> SessionSnapshot:
+        state = self._graph.get_state(self._config(thread_id))
+        values = state.values
         needs_level = "ask_level" in state.next
-        return SessionHandle(
+        finished = not state.next
+        role_context = values.get("role_context")
+        return SessionSnapshot(
             thread_id=thread_id,
-            question=None if needs_level else state.values["question"],
+            profile=values["profile"],
             needs_level=needs_level,
-            profile=state.values["profile"],
+            level=role_context.target_level if role_context is not None else None,
+            question=None if needs_level or finished else values.get("question"),
+            transcript=list(values.get("transcript", [])),
+            finished=finished,
+            closing=values.get("closing"),
+            grade=values.get("grade"),
+            coach=values.get("coach"),
         )

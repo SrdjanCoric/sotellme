@@ -7,7 +7,7 @@ import pytest
 from sotellme.assessor import AnswerAssessment, StarFlags
 from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.director import DirectorDecision, DirectorSituation
-from sotellme.engine import Director, EngineError, InterviewEngine, RoleBuilder, SessionHandle
+from sotellme.engine import Director, EngineError, InterviewEngine, RoleBuilder, SessionSnapshot
 from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
@@ -201,7 +201,7 @@ def write_cv(tmp_path: Path) -> Path:
 
 def start_past_setup(
     engine: InterviewEngine, cv: Path, posting_text: str | None = None
-) -> SessionHandle:
+) -> SessionSnapshot:
     session = engine.start(cv, posting_text=posting_text)
     if session.needs_level:
         session = engine.submit_level(session.thread_id, "mid")
@@ -633,3 +633,38 @@ def test_resume_after_finished_session_is_a_clear_error(tmp_path: Path) -> None:
 
         with pytest.raises(EngineError, match="already finished"):
             engine.resume_latest()
+
+
+def test_snapshot_latest_keeps_the_answered_turns_mid_session(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(data_dir, director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        probe = engine.submit_answer(session.thread_id, "We migrated the pipeline.")
+
+    with build_engine(data_dir, director=ScriptedDirector([WRAP_UP_DECISION])) as engine:
+        snapshot = engine.snapshot_latest()
+
+    assert not snapshot.finished
+    assert snapshot.question == probe.next_question
+    assert session.question is not None
+    assert snapshot.transcript == [
+        Turn(question=session.question, answer="We migrated the pipeline.")
+    ]
+
+
+def test_snapshot_latest_recovers_a_finished_session(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    with build_engine(data_dir) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "Strong answer.")
+
+    with build_engine(data_dir) as engine:
+        snapshot = engine.snapshot_latest()
+
+    assert snapshot.finished
+    assert snapshot.question is None
+    assert snapshot.transcript
+    assert snapshot.closing is not None
+    assert snapshot.grade is not None
+    assert snapshot.coach is not None

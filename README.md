@@ -59,6 +59,21 @@ render in the browser with JavaScript can't be read, and pasting the text always
 `--job` is optional; without it the interview runs on a default competency set, with no
 company research to ground it.
 
+There's also a local web app if you'd rather not type paths behind flags. Install the
+web extra and launch it:
+
+```sh
+cd backend
+uv sync --extra web
+uv run sotellme web
+```
+
+It uploads your CV, takes the posting as a link or a paste, runs the interview as a chat,
+and lays the report out on the page, with a button to save it to a Markdown file when you
+want one. It runs locally just like the CLI, on your own key, with nothing leaving the
+machine but the calls to your provider. The terminal version is still there, and it's the
+path the tests cover.
+
 A few more things you can do:
 
 - Answers are multi-line with real line editing (Home, End, arrow keys, word jumps).
@@ -86,6 +101,14 @@ assessor, interviewer); the smart slot runs the end-of-session grader and coach.
 override both with `SOTELLME_FAST_MODEL` and `SOTELLME_SMART_MODEL` or the matching
 flags. The eval suites run against `google_genai` with an `anthropic` judge, which is
 the combo I'd reach for.
+
+The models themselves come from a catalog. Out of the box it ships the per-provider
+defaults in the table above. To change what's on offer, write a `~/.sotellme/models.toml`
+that lists the models you want and the default for each provider, and that's what the
+picker shows. In the web app's Advanced section you can go finer and set a model for each step on its
+own, a cheap one for the company research and a stronger one for the questions and the
+grading, mixing providers once you've set more than one key. The file holds model names
+only; your API keys stay in the environment.
 
 Your transcripts and session state stay on your machine. The only things that leave it
 are API calls to whichever provider you picked, plus plain HTTP GETs to public pages:
