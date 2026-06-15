@@ -18,41 +18,51 @@ fast = "gemini-3.5-flash"
 smart = "gemini-3.1-pro-preview"
 models = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
-# Approximate API prices, USD per million tokens (input/output). Estimates as of 2026-06;
-# verify against your provider's current pricing. Override any of these by adding a
-# [prices."<model>"] table to ~/.sotellme/models.toml.
+# Approximate API prices, USD per million tokens. Estimates as of 2026-06; verify against your
+# provider's current pricing. cached_input is the reduced rate for cache-read (prompt-cache)
+# tokens: Anthropic reads cached input at 10% of input, OpenAI at 50%, Gemini at 25%. Override
+# any of these by adding a [prices."<model>"] table to ~/.sotellme/models.toml.
 [prices."claude-opus-4-8"]
 input = 5.0
 output = 25.0
+cached_input = 0.5
 
 [prices."claude-sonnet-4-6"]
 input = 3.0
 output = 15.0
+cached_input = 0.3
 
 [prices."claude-haiku-4-5-20251001"]
 input = 1.0
 output = 5.0
+cached_input = 0.1
 
 [prices."gpt-5.5"]
 input = 5.0
 output = 30.0
+cached_input = 2.5
 
 [prices."gpt-5.4"]
 input = 2.5
 output = 15.0
+cached_input = 1.25
 
 [prices."gpt-5.4-mini"]
 input = 0.75
 output = 4.5
+cached_input = 0.375
 
 [prices."gemini-3.1-pro-preview"]
 input = 2.0
 output = 12.0
+cached_input = 0.5
 
 [prices."gemini-3.5-flash"]
 input = 1.5
 output = 9.0
+cached_input = 0.375
 
 [prices."gemini-3.1-flash-lite"]
 input = 0.25
 output = 1.5
+cached_input = 0.0625

@@ -28,6 +28,11 @@ class ProviderCatalog(BaseModel):
 class ModelPrice(BaseModel):
     input: float
     output: float
+    cached_input: float | None = None
+
+    @property
+    def cached_input_rate(self) -> float:
+        return self.input if self.cached_input is None else self.cached_input
 
 
 class Catalog(BaseModel):

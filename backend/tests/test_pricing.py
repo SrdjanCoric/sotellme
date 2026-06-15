@@ -13,6 +13,14 @@ def default_prices() -> dict[str, ModelPrice]:
     return default_catalog().prices
 
 
+def test_cached_input_defaults_to_the_full_input_rate() -> None:
+    assert ModelPrice(input=3.0, output=15.0).cached_input_rate == 3.0
+
+
+def test_cached_input_can_be_set_below_the_input_rate() -> None:
+    assert ModelPrice(input=3.0, output=15.0, cached_input=0.3).cached_input_rate == 0.3
+
+
 def test_cost_combines_input_and_output_rates_per_million_tokens() -> None:
     price = ModelPrice(input=3.0, output=15.0)
 
@@ -23,6 +31,26 @@ def test_cost_scales_with_partial_millions() -> None:
     price = ModelPrice(input=2.0, output=12.0)
 
     assert cost_usd(price, input_tokens=500_000, output_tokens=100_000) == 1.0 + 1.2
+
+
+def test_cached_input_tokens_are_billed_at_the_reduced_rate() -> None:
+    price = ModelPrice(input=10.0, output=20.0, cached_input=1.0)
+
+    full = cost_usd(price, input_tokens=1_000_000, output_tokens=0)
+    discounted = cost_usd(
+        price, input_tokens=1_000_000, output_tokens=0, cached_input_tokens=1_000_000
+    )
+
+    assert full == 10.0
+    assert discounted == 1.0
+
+
+def test_only_the_cached_portion_of_input_is_discounted() -> None:
+    price = ModelPrice(input=10.0, output=20.0, cached_input=1.0)
+
+    cost = cost_usd(price, input_tokens=1_000_000, output_tokens=0, cached_input_tokens=400_000)
+
+    assert cost == (600_000 * 10.0 + 400_000 * 1.0) / 1_000_000
 
 
 def test_a_longer_interview_is_estimated_to_cost_more() -> None:
@@ -114,4 +142,35 @@ def test_an_empty_session_summarizes_to_zero() -> None:
 
     assert summary.total_tokens == 0
     assert summary.usd == 0.0
+    assert summary.saved_usd == 0.0
     assert summary.per_model == ()
+
+
+def test_the_summary_prices_cached_input_at_the_reduced_rate() -> None:
+    prices = {"m": ModelPrice(input=10.0, output=20.0, cached_input=1.0)}
+    usage = {
+        "m": ModelUsage(input_tokens=1_000_000, output_tokens=0, cached_input_tokens=1_000_000)
+    }
+
+    summary = summarize_actual_cost(usage, prices)
+
+    assert summary.usd == 1.0
+
+
+def test_the_summary_reports_cached_tokens_and_estimated_savings() -> None:
+    prices = {"m": ModelPrice(input=10.0, output=20.0, cached_input=1.0)}
+    usage = {"m": ModelUsage(input_tokens=1_000_000, output_tokens=0, cached_input_tokens=400_000)}
+
+    summary = summarize_actual_cost(usage, prices)
+
+    assert summary.per_model[0].cached_input_tokens == 400_000
+    assert summary.saved_usd == 400_000 * (10.0 - 1.0) / 1_000_000
+
+
+def test_an_unpriced_model_contributes_no_savings() -> None:
+    usage = {"mystery": ModelUsage(input_tokens=1_000, output_tokens=0, cached_input_tokens=500)}
+
+    summary = summarize_actual_cost(usage, default_prices())
+
+    assert summary.saved_usd == 0.0
+    assert summary.per_model[0].cached_input_tokens == 500

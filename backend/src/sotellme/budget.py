@@ -53,10 +53,13 @@ class BudgetCallback(BaseCallbackHandler):
     def __init__(self) -> None:
         self._usage: dict[str, list[int]] = {}
 
-    def record(self, model: str, input_tokens: int, output_tokens: int) -> None:
-        bucket = self._usage.setdefault(model, [0, 0])
+    def record(
+        self, model: str, input_tokens: int, output_tokens: int, cached_input_tokens: int = 0
+    ) -> None:
+        bucket = self._usage.setdefault(model, [0, 0, 0])
         bucket[0] += input_tokens
         bucket[1] += output_tokens
+        bucket[2] += cached_input_tokens
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         for generations in response.generations:
@@ -67,15 +70,25 @@ class BudgetCallback(BaseCallbackHandler):
                     continue
                 metadata = getattr(message, "response_metadata", {}) or {}
                 model = metadata.get("model_name") or metadata.get("model") or "unknown"
-                self.record(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+                cache_read = (usage.get("input_token_details") or {}).get("cache_read", 0)
+                self.record(
+                    model,
+                    usage.get("input_tokens", 0),
+                    usage.get("output_tokens", 0),
+                    cache_read,
+                )
 
     @property
     def total_tokens(self) -> int:
-        return sum(used_input + used_output for used_input, used_output in self._usage.values())
+        return sum(used_input + used_output for used_input, used_output, _ in self._usage.values())
 
     @property
     def usage(self) -> dict[str, ModelUsage]:
         return {
-            model: ModelUsage(input_tokens=input_tokens, output_tokens=output_tokens)
-            for model, (input_tokens, output_tokens) in self._usage.items()
+            model: ModelUsage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
+            )
+            for model, (input_tokens, output_tokens, cached_input_tokens) in self._usage.items()
         }

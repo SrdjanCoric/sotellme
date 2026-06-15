@@ -5,6 +5,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 
+from sotellme.caching import cache_system_prompt
 from sotellme.prompts import guardrail_messages
 
 GuardrailVerdict = Literal["allow", "redirect", "terminate"]
@@ -49,13 +50,15 @@ _SCREEN_FAILURE_MESSAGE = "Could not screen the reply. Try answering again."
 
 
 class LLMGuardrail:
-    def __init__(self, model: BaseChatModel) -> None:
+    def __init__(self, model: BaseChatModel, provider: str = "") -> None:
         self._model = model
+        self._provider = provider
 
     def classify(self, question: str, answer: str) -> GuardrailVerdict:
         structured = self._model.with_structured_output(GuardrailScreen)
         try:
-            result = structured.invoke(guardrail_messages(question, answer))
+            messages = cache_system_prompt(guardrail_messages(question, answer), self._provider)
+            result = structured.invoke(messages)
         except (ValidationError, OutputParserException) as exc:
             raise GuardrailError(_SCREEN_FAILURE_MESSAGE) from exc
         if not isinstance(result, GuardrailScreen):

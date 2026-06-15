@@ -2,6 +2,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from sotellme.caching import cache_system_prompt
 from sotellme.prompts import profile_extraction_messages
 
 
@@ -45,10 +46,14 @@ _PARSE_FAILURE_MESSAGE = (
 )
 
 
-def parse_candidate_profile(cv_text: str, model: BaseChatModel) -> CandidateProfile:
+def parse_candidate_profile(
+    cv_text: str, model: BaseChatModel, provider: str = ""
+) -> CandidateProfile:
     structured = model.with_structured_output(CandidateProfile)
     try:
-        result = structured.invoke(profile_extraction_messages(cv_text))
+        result = structured.invoke(
+            cache_system_prompt(profile_extraction_messages(cv_text), provider)
+        )
     except (ValidationError, OutputParserException) as exc:
         raise ProfileParseError(_PARSE_FAILURE_MESSAGE) from exc
     if not isinstance(result, CandidateProfile):

@@ -4,6 +4,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 
+from sotellme.caching import cache_system_prompt
 from sotellme.interviewer import Turn, render_transcript
 from sotellme.prompts import assessor_messages
 
@@ -52,10 +53,15 @@ class AssessorError(Exception):
 _ASSESS_FAILURE_MESSAGE = "Could not assess the answer. Try answering again."
 
 
-def assess_answer(topic: str, transcript: Sequence[Turn], model: BaseChatModel) -> AnswerAssessment:
+def assess_answer(
+    topic: str, transcript: Sequence[Turn], model: BaseChatModel, provider: str = ""
+) -> AnswerAssessment:
     structured = model.with_structured_output(AnswerAssessment)
     try:
-        result = structured.invoke(assessor_messages(topic, render_transcript(transcript)))
+        messages = cache_system_prompt(
+            assessor_messages(topic, render_transcript(transcript)), provider
+        )
+        result = structured.invoke(messages)
     except (ValidationError, OutputParserException) as exc:
         raise AssessorError(_ASSESS_FAILURE_MESSAGE) from exc
     if not isinstance(result, AnswerAssessment):

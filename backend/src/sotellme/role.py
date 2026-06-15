@@ -4,6 +4,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from sotellme.caching import cache_system_prompt
 from sotellme.prompts import role_context_messages
 
 TargetLevel = Literal["junior", "mid", "senior", "staff"]
@@ -80,10 +81,12 @@ _BUILD_FAILURE_MESSAGE = (
 )
 
 
-def build_role_context(posting_text: str, model: BaseChatModel) -> RoleContext:
+def build_role_context(posting_text: str, model: BaseChatModel, provider: str = "") -> RoleContext:
     structured = model.with_structured_output(RoleContext)
     try:
-        result = structured.invoke(role_context_messages(posting_text))
+        result = structured.invoke(
+            cache_system_prompt(role_context_messages(posting_text), provider)
+        )
     except (ValidationError, OutputParserException) as exc:
         raise RoleContextError(_BUILD_FAILURE_MESSAGE) from exc
     if not isinstance(result, RoleContext):

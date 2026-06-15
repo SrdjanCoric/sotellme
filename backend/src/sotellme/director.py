@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 
 from sotellme.assessor import TopicAssessment
+from sotellme.caching import cache_system_prompt
 from sotellme.coverage import DEFAULT_FOLLOW_UP_CAP
 from sotellme.interviewer import Turn, render_profile, render_transcript
 from sotellme.profile import CandidateProfile
@@ -114,22 +115,26 @@ def render_assessments(log: Sequence[TopicAssessment]) -> str:
 
 
 class LLMDirector:
-    def __init__(self, model: BaseChatModel) -> None:
+    def __init__(self, model: BaseChatModel, provider: str = "") -> None:
         self._model = model
+        self._provider = provider
 
     def decide(self, situation: DirectorSituation) -> DirectorDecision:
-        messages = director_messages(
-            role_details=render_role_details(situation.context),
-            emphasis=situation.emphasis,
-            brief=situation.brief,
-            profile_text=render_profile(situation.profile),
-            transcript_text=render_transcript(situation.transcript),
-            assessment_notes=render_assessments(situation.assessments),
-            questions_asked=situation.questions_asked,
-            question_cap=situation.question_cap,
-            consecutive_follow_ups=situation.consecutive_follow_ups,
-            follow_up_cap=situation.follow_up_cap,
-            follow_ups_exhausted=situation.follow_ups_exhausted,
+        messages = cache_system_prompt(
+            director_messages(
+                role_details=render_role_details(situation.context),
+                emphasis=situation.emphasis,
+                brief=situation.brief,
+                profile_text=render_profile(situation.profile),
+                transcript_text=render_transcript(situation.transcript),
+                assessment_notes=render_assessments(situation.assessments),
+                questions_asked=situation.questions_asked,
+                question_cap=situation.question_cap,
+                consecutive_follow_ups=situation.consecutive_follow_ups,
+                follow_up_cap=situation.follow_up_cap,
+                follow_ups_exhausted=situation.follow_ups_exhausted,
+            ),
+            self._provider,
         )
         structured = self._model.with_structured_output(DirectorDecision)
         try:
