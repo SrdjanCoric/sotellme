@@ -647,6 +647,7 @@ def test_snapshot_latest_keeps_the_answered_turns_mid_session(tmp_path: Path) ->
 
     assert not snapshot.finished
     assert snapshot.question == probe.next_question
+    assert session.question is not None
     assert snapshot.transcript == [
         Turn(question=session.question, answer="We migrated the pipeline.")
     ]

@@ -69,9 +69,10 @@ uv run sotellme web
 ```
 
 It uploads your CV, takes the posting as a link or a paste, runs the interview as a chat,
-and lays the report out on the page. It runs locally just like the CLI, on your own key,
-with nothing leaving the machine but the calls to your provider. The terminal version is
-still there, and it's the path the tests cover.
+and lays the report out on the page, with a button to save it to a Markdown file when you
+want one. It runs locally just like the CLI, on your own key, with nothing leaving the
+machine but the calls to your provider. The terminal version is still there, and it's the
+path the tests cover.
 
 A few more things you can do:
 

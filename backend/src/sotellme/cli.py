@@ -19,6 +19,7 @@ from sotellme.assessor import AssessorError, assess_answer
 from sotellme.catalog import CatalogError, load_catalog
 from sotellme.coach import CoachingError, CoachReport, coach_session
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
+from sotellme.coverage import DEFAULT_FOLLOW_UP_CAP, DEFAULT_QUESTION_CAP
 from sotellme.director import DirectorError, LLMDirector
 from sotellme.engine import (
     Assessor,
@@ -297,6 +298,17 @@ def _build_coacher(config: ModelConfig) -> Coacher:
     )
 
 
+def _env_cap(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 def build_engine(
     config: ModelConfig, callbacks: list[BaseCallbackHandler]
 ) -> InterviewEngine:
@@ -310,6 +322,8 @@ def build_engine(
         researcher=_build_researcher(config),
         grader=_build_grader(config),
         coacher=_build_coacher(config),
+        question_cap=_env_cap("SOTELLME_QUESTION_CAP", DEFAULT_QUESTION_CAP),
+        follow_up_cap=_env_cap("SOTELLME_FOLLOW_UP_CAP", DEFAULT_FOLLOW_UP_CAP),
         callbacks=callbacks,
     )
 

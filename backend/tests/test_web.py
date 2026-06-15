@@ -2,7 +2,7 @@ from pathlib import Path
 
 from sotellme.catalog import default_catalog
 from sotellme.coach import CoachReport
-from sotellme.config import AgentModel
+from sotellme.config import AGENT_TAG_PREFIX, AgentModel
 from sotellme.engine import SessionSnapshot, TurnResult
 from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
@@ -13,6 +13,7 @@ from sotellme.web import (
     TEXT_MODE,
     WebState,
     agent_overrides_from_selections,
+    agent_step_label,
     chat_messages,
     clean_posting,
     default_provider,
@@ -170,6 +171,18 @@ def test_chat_messages_end_on_the_closing_line_when_finished() -> None:
         ("user", "I led the migration."),
         ("assistant", "Thanks for that."),
     ]
+
+
+def test_agent_step_label_maps_a_tagged_agent_to_a_friendly_line() -> None:
+    assert agent_step_label([f"{AGENT_TAG_PREFIX}grader"]) == "Grading your answers"
+    assert agent_step_label([f"{AGENT_TAG_PREFIX}coach"]) == "Writing your coaching"
+
+
+def test_agent_step_label_ignores_unrelated_or_missing_tags() -> None:
+    assert agent_step_label(["some:other-tag"]) is None
+    assert agent_step_label([f"{AGENT_TAG_PREFIX}unknown"]) is None
+    assert agent_step_label(None) is None
+    assert agent_step_label([]) is None
 
 
 def test_blank_posting_text_becomes_no_posting() -> None:

@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from langchain_core.callbacks import BaseCallbackHandler
 
+from sotellme.assessor import AssessorError
 from sotellme.catalog import Catalog, CatalogError, load_catalog
 from sotellme.cli import (
     NO_COACHING_MESSAGE,
@@ -16,16 +17,18 @@ from sotellme.cli import (
     build_engine,
     format_score_summary,
 )
-from sotellme.coach import CoachReport
+from sotellme.coach import CoachingError, CoachReport
 from sotellme.config import (
     AGENT_ROLES,
+    AGENT_TAG_PREFIX,
     PROVIDER_KEY_VARS,
     AgentModel,
     ModelConfigError,
     resolve_model_config,
 )
+from sotellme.director import DirectorError
 from sotellme.engine import EngineError, InterviewEngine, SessionSnapshot, TurnResult
-from sotellme.grader import SessionGrade
+from sotellme.grader import GradingError, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import CandidateProfile
@@ -37,6 +40,15 @@ DEFAULT_CHOICE = "— provider default —"
 
 LINK_MODE = "Link"
 TEXT_MODE = "Paste text"
+
+TURN_ERRORS = (AssessorError, DirectorError, GradingError, CoachingError, EngineError)
+
+DEFAULT_TEST_ANSWER = (
+    "At my last role I led the migration of our billing service to a new datastore. "
+    "I scoped the work into phases, coordinated three engineers, and we cut p99 latency "
+    "by 40% with zero downtime. The hardest part was backfilling without double-charging, "
+    "which I solved with idempotency keys and a reconciliation job."
+)
 
 Phase = Literal["setup", "level", "interview", "report"]
 
@@ -160,18 +172,41 @@ def chat_messages(state: WebState) -> list[ChatMessage]:
     return messages
 
 
+AGENT_STEP_LABELS = {
+    "parser": "Reading your CV",
+    "role_builder": "Sizing up the role",
+    "researcher": "Researching the company",
+    "director": "Choosing the next question",
+    "interviewer": "Writing the question",
+    "assessor": "Weighing your answer",
+    "grader": "Grading your answers",
+    "coach": "Writing your coaching",
+}
+
+
+def agent_step_label(tags: Any) -> str | None:
+    if not tags:
+        return None
+    for tag in tags:
+        if isinstance(tag, str) and tag.startswith(AGENT_TAG_PREFIX):
+            return AGENT_STEP_LABELS.get(tag[len(AGENT_TAG_PREFIX) :])
+    return None
+
+
 class _ModelProgress(BaseCallbackHandler):
-    """Ticks an `st.status` label on each model call so a long wait shows it's working."""
+    """Ticks an `st.status` label and writes a line per step so a long wait shows its work."""
 
     def __init__(self) -> None:
         self._status: Any = None
         self._label = ""
         self._step = 0
+        self._last_written: str | None = None
 
     def aim(self, status: Any, label: str) -> None:
         self._status = status
         self._label = label
         self._step = 0
+        self._last_written = None
 
     def clear(self) -> None:
         self._status = None
@@ -182,6 +217,10 @@ class _ModelProgress(BaseCallbackHandler):
         self._step += 1
         try:
             self._status.update(label=f"{self._label} ({self._step})")
+            step_label = agent_step_label(kwargs.get("tags"))
+            if step_label is not None and step_label != self._last_written:
+                self._status.write(step_label)
+                self._last_written = step_label
         except Exception:
             self._status = None
 
@@ -204,18 +243,19 @@ def run() -> None:
     if state is None:
         _render_setup(catalog)
         return
+    phase = phase_of(state)
+    if phase == "report":
+        _render_report(state)
+        return
     engine = st.session_state.get("engine")
     if not isinstance(engine, InterviewEngine):
         st.session_state.pop("state", None)
         _render_setup(catalog)
         return
-    phase = phase_of(state)
     if phase == "level":
         _render_level(engine, state)
-    elif phase == "interview":
-        _render_interview(engine, state)
     else:
-        _render_report(state)
+        _render_interview(engine, state)
 
 
 def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
@@ -244,11 +284,6 @@ def _recover(catalog: Catalog) -> WebState | None:
         snapshot = engine.snapshot_latest()
     except EngineError:
         return None
-    if snapshot.finished:
-        st.session_state.engine = engine
-        st.session_state.last_report = snapshot
-        return None
-    st.session_state.pop("last_report", None)
     st.session_state.engine = engine
     state = state_from_snapshot(snapshot)
     st.session_state.state = state
@@ -260,18 +295,13 @@ def _render_sidebar(state: WebState | None) -> None:
 
     with st.sidebar:
         st.subheader("Menu")
-        if state is not None and st.button("New interview", use_container_width=True):
-            for key in ("state", "engine", "report_path", "last_report"):
-                st.session_state.pop(key, None)
-            st.session_state.new_interview = True
-            st.rerun()
-        last_report = st.session_state.get("last_report")
-        if state is None and last_report is not None:
-            if st.button("View last report", use_container_width=True):
-                st.session_state.state = state_from_snapshot(last_report)
-                st.session_state.pop("new_interview", None)
+        if state is not None:
+            if st.button("New interview", use_container_width=True):
+                for key in ("state", "engine", "report_path"):
+                    st.session_state.pop(key, None)
+                st.session_state.new_interview = True
                 st.rerun()
-        elif state is None:
+        else:
             st.caption("Start an interview to see options here.")
 
 
@@ -348,7 +378,6 @@ def _render_setup(catalog: Catalog) -> None:
     st.session_state.engine = engine
     st.session_state.state = state_from_snapshot(snapshot)
     st.session_state.pop("new_interview", None)
-    st.session_state.pop("last_report", None)
     st.rerun()
 
 
@@ -378,14 +407,50 @@ def _render_interview(engine: InterviewEngine, state: WebState) -> None:
     _render_level_caption(state)
     for role, content in chat_messages(state):
         st.chat_message(role).write(content)
+    _render_test_autopilot(engine, state)
     answer = st.chat_input("Your answer")
     if answer:
         st.chat_message("user").write(answer)
         with st.status("Thinking…") as status:
             _aim_progress(status, "Thinking")
-            result = engine.submit_answer(state.thread_id, answer)
+            try:
+                result = engine.submit_answer(state.thread_id, answer)
+            except TURN_ERRORS as exc:
+                status.update(state="error")
+                st.error(str(exc))
+                return
         st.session_state.state = state_after_answer(state, answer, result)
         st.rerun()
+
+
+def _test_answer() -> str | None:
+    if not os.environ.get("SOTELLME_TEST_MODE"):
+        return None
+    return os.environ.get("SOTELLME_TEST_ANSWER") or DEFAULT_TEST_ANSWER
+
+
+def _render_test_autopilot(engine: InterviewEngine, state: WebState) -> None:
+    import streamlit as st
+
+    answer = _test_answer()
+    if answer is None:
+        return
+    if not st.button("⏩ Finish with test answers", help="Test mode: auto-answer to the end."):
+        return
+    current = state
+    with st.status("Auto-answering to the end…") as status:
+        _aim_progress(status, "Auto-answering")
+        while phase_of(current) == "interview":
+            try:
+                result = engine.submit_answer(current.thread_id, answer)
+            except TURN_ERRORS as exc:
+                status.update(state="error")
+                st.error(str(exc))
+                st.session_state.state = current
+                return
+            current = state_after_answer(current, answer, result)
+    st.session_state.state = current
+    st.rerun()
 
 
 def _aim_progress(status: Any, label: str) -> None:

@@ -2,6 +2,7 @@ import pytest
 
 from sotellme.catalog import Catalog, default_catalog
 from sotellme.config import (
+    AGENT_TAG_PREFIX,
     AgentModel,
     ModelConfigError,
     build_chat_model,
@@ -48,6 +49,14 @@ def test_build_chat_model_routes_slot_to_provider_model(
     model = build_chat_model(config, "fast")
 
     assert "claude-sonnet-4-6" in str(getattr(model, "model", ""))
+
+
+def test_build_chat_model_tags_an_agent_model_with_its_role() -> None:
+    config = resolve_model_config(provider="anthropic", env={"ANTHROPIC_API_KEY": "sk-test"})
+
+    model = build_chat_model(config, "grader")
+
+    assert f"{AGENT_TAG_PREFIX}grader" in (model.tags or [])
 
 
 def test_openai_provider_defaults_and_key_var() -> None:

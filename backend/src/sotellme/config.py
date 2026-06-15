@@ -25,6 +25,8 @@ AGENT_TIERS: dict[str, str] = {
 
 AGENT_ROLES = tuple(AGENT_TIERS)
 
+AGENT_TAG_PREFIX = "sotellme-agent:"
+
 
 class ModelConfigError(Exception):
     pass
@@ -110,7 +112,9 @@ def resolve_model_config(
 def build_chat_model(config: ModelConfig, key: str) -> BaseChatModel:
     if key in config.agents:
         agent = config.agents[key]
-        return init_chat_model(agent.model, model_provider=agent.provider)
+        return init_chat_model(
+            agent.model, model_provider=agent.provider, tags=[f"{AGENT_TAG_PREFIX}{key}"]
+        )
     if key in ("fast", "smart"):
         model = config.fast_model if key == "fast" else config.smart_model
         return init_chat_model(model, model_provider=config.provider)
