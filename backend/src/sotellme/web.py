@@ -24,12 +24,13 @@ from sotellme.config import (
     ModelConfigError,
     resolve_model_config,
 )
-from sotellme.engine import EngineError, InterviewEngine, SessionHandle, TurnResult
+from sotellme.engine import EngineError, InterviewEngine, SessionSnapshot, TurnResult
 from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import CandidateProfile
 from sotellme.report import render_report, write_report
+from sotellme.role import TargetLevel
 from sotellme.tracing import langfuse_callbacks
 
 DEFAULT_CHOICE = "— provider default —"
@@ -48,6 +49,7 @@ class WebState:
     profile: CandidateProfile
     needs_level: bool
     question: str | None
+    level: TargetLevel | None = None
     answered: list[Turn] = field(default_factory=list)
     finished: bool = False
     closing: str | None = None
@@ -56,12 +58,19 @@ class WebState:
     transcript: list[Turn] = field(default_factory=list)
 
 
-def state_from_handle(handle: SessionHandle) -> WebState:
+def state_from_snapshot(snapshot: SessionSnapshot) -> WebState:
     return WebState(
-        thread_id=handle.thread_id,
-        profile=handle.profile,
-        needs_level=handle.needs_level,
-        question=handle.question,
+        thread_id=snapshot.thread_id,
+        profile=snapshot.profile,
+        needs_level=snapshot.needs_level,
+        question=snapshot.question,
+        level=snapshot.level,
+        answered=list(snapshot.transcript),
+        finished=snapshot.finished,
+        closing=snapshot.closing,
+        grade=snapshot.grade,
+        coach=snapshot.coach,
+        transcript=list(snapshot.transcript),
     )
 
 
@@ -191,6 +200,7 @@ def run() -> None:
         return
 
     state = _recover(catalog)
+    _render_sidebar(state)
     if state is None:
         _render_setup(catalog)
         return
@@ -225,17 +235,44 @@ def _recover(catalog: Catalog) -> WebState | None:
     existing = st.session_state.get("state")
     if isinstance(existing, WebState):
         return existing
+    if st.session_state.get("new_interview"):
+        return None
     engine = _recovery_engine(catalog)
     if engine is None:
         return None
     try:
-        handle = engine.resume_latest()
+        snapshot = engine.snapshot_latest()
     except EngineError:
         return None
+    if snapshot.finished:
+        st.session_state.engine = engine
+        st.session_state.last_report = snapshot
+        return None
+    st.session_state.pop("last_report", None)
     st.session_state.engine = engine
-    state = state_from_handle(handle)
+    state = state_from_snapshot(snapshot)
     st.session_state.state = state
     return state
+
+
+def _render_sidebar(state: WebState | None) -> None:
+    import streamlit as st
+
+    with st.sidebar:
+        st.subheader("Menu")
+        if state is not None and st.button("New interview", use_container_width=True):
+            for key in ("state", "engine", "report_path", "last_report"):
+                st.session_state.pop(key, None)
+            st.session_state.new_interview = True
+            st.rerun()
+        last_report = st.session_state.get("last_report")
+        if state is None and last_report is not None:
+            if st.button("View last report", use_container_width=True):
+                st.session_state.state = state_from_snapshot(last_report)
+                st.session_state.pop("new_interview", None)
+                st.rerun()
+        elif state is None:
+            st.caption("Start an interview to see options here.")
 
 
 def _render_setup(catalog: Catalog) -> None:
@@ -306,10 +343,12 @@ def _render_setup(catalog: Catalog) -> None:
     cv_path = save_upload(cv_file.name, cv_file.getvalue(), _upload_dir())
     with st.status("Reading your CV and researching the role…") as status:
         progress.aim(status, "Reading your CV and researching the role")
-        handle = engine.start(cv_path, posting_text=resolved_posting)
+        snapshot = engine.start(cv_path, posting_text=resolved_posting)
         progress.clear()
     st.session_state.engine = engine
-    st.session_state.state = state_from_handle(handle)
+    st.session_state.state = state_from_snapshot(snapshot)
+    st.session_state.pop("new_interview", None)
+    st.session_state.pop("last_report", None)
     st.rerun()
 
 
@@ -321,18 +360,27 @@ def _render_level(engine: InterviewEngine, state: WebState) -> None:
     if st.button("Continue", type="primary"):
         with st.status("Setting up the interview…") as status:
             _aim_progress(status, "Setting up the interview")
-            handle = engine.submit_level(state.thread_id, level)
-        st.session_state.state = state_from_handle(handle)
+            snapshot = engine.submit_level(state.thread_id, level)
+        st.session_state.state = state_from_snapshot(snapshot)
         st.rerun()
+
+
+def _render_level_caption(state: WebState) -> None:
+    import streamlit as st
+
+    if state.level is not None:
+        st.caption(f"Interviewing at the {state.level} level.")
 
 
 def _render_interview(engine: InterviewEngine, state: WebState) -> None:
     import streamlit as st
 
+    _render_level_caption(state)
     for role, content in chat_messages(state):
         st.chat_message(role).write(content)
     answer = st.chat_input("Your answer")
     if answer:
+        st.chat_message("user").write(answer)
         with st.status("Thinking…") as status:
             _aim_progress(status, "Thinking")
             result = engine.submit_answer(state.thread_id, answer)
@@ -351,6 +399,7 @@ def _aim_progress(status: Any, label: str) -> None:
 def _render_report(state: WebState) -> None:
     import streamlit as st
 
+    _render_level_caption(state)
     for role, content in chat_messages(state):
         st.chat_message(role).write(content)
     grade = state.grade
@@ -358,18 +407,15 @@ def _render_report(state: WebState) -> None:
     if coach is not None and grade is not None and grade.scores:
         st.subheader("Scorecard")
         st.text(format_score_summary(grade))
-        if "report_path" not in st.session_state:
-            st.session_state.report_path = write_report(
-                coach, state.transcript, Path.cwd(), datetime.now()
-            )
         st.markdown(render_report(coach, state.transcript))
-        st.caption(f"Saved your full report to {st.session_state.report_path}")
+        report_path = st.session_state.get("report_path")
+        if report_path is None and st.button("Save report"):
+            report_path = write_report(coach, state.transcript, Path.cwd(), datetime.now())
+            st.session_state.report_path = report_path
+        if report_path is not None:
+            st.caption(f"Saved your full report to {report_path}")
     else:
         st.info(NO_COACHING_MESSAGE)
-    if st.button("Start another interview"):
-        for key in ("state", "report_path"):
-            st.session_state.pop(key, None)
-        st.rerun()
 
 
 def _upload_dir() -> Path:

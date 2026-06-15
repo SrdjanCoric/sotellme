@@ -31,7 +31,7 @@ from sotellme.engine import (
     ProfileParser,
     Researcher,
     RoleBuilder,
-    SessionHandle,
+    SessionSnapshot,
 )
 from sotellme.extraction import CVInputError
 from sotellme.fetch import fetch_research_page
@@ -333,6 +333,7 @@ def streamlit_run_command(web_module: Path, executable: str) -> list[str]:
         "run",
         str(web_module),
         f"--theme.primaryColor={WEB_ACCENT_COLOR}",
+        "--client.toolbarMode=minimal",
     ]
 
 
@@ -344,7 +345,7 @@ def _run_web(console: Console) -> int:
     return subprocess.call(streamlit_run_command(web_module, sys.executable))
 
 
-def _run_session(console: Console, engine: InterviewEngine, session: SessionHandle) -> None:
+def _run_session(console: Console, engine: InterviewEngine, session: SessionSnapshot) -> None:
     interactive = _interactive()
     answer_session = _build_answer_session() if interactive else None
     level_session: PromptSession[str] | None = PromptSession() if interactive else None

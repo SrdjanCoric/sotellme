@@ -3,7 +3,7 @@ from pathlib import Path
 from sotellme.catalog import default_catalog
 from sotellme.coach import CoachReport
 from sotellme.config import AgentModel
-from sotellme.engine import SessionHandle, TurnResult
+from sotellme.engine import SessionSnapshot, TurnResult
 from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
@@ -21,7 +21,7 @@ from sotellme.web import (
     posting_to_resolve,
     save_upload,
     state_after_answer,
-    state_from_handle,
+    state_from_snapshot,
 )
 
 
@@ -38,30 +38,74 @@ def test_no_state_is_the_setup_phase() -> None:
     assert phase_of(None) == "setup"
 
 
-def test_a_handle_awaiting_the_level_is_the_level_phase() -> None:
-    handle = SessionHandle(
+def test_a_snapshot_awaiting_the_level_is_the_level_phase() -> None:
+    snapshot = SessionSnapshot(
         thread_id="t1", question=None, needs_level=True, profile=profile()
     )
 
-    state = state_from_handle(handle)
+    state = state_from_snapshot(snapshot)
 
     assert phase_of(state) == "level"
 
 
-def test_a_handle_with_the_first_question_is_the_interview_phase() -> None:
-    handle = SessionHandle(
+def test_a_snapshot_with_the_first_question_is_the_interview_phase() -> None:
+    snapshot = SessionSnapshot(
         thread_id="t1", question="Tell me about a project.", needs_level=False, profile=profile()
     )
 
-    state = state_from_handle(handle)
+    state = state_from_snapshot(snapshot)
 
     assert phase_of(state) == "interview"
     assert state.question == "Tell me about a project."
 
 
+def test_a_snapshot_seeds_prior_turns_and_the_running_level() -> None:
+    transcript = [Turn(question="Tell me about a project.", answer="I led the migration.")]
+    snapshot = SessionSnapshot(
+        thread_id="t1",
+        question="What went wrong?",
+        needs_level=False,
+        level="senior",
+        profile=profile(),
+        transcript=transcript,
+    )
+
+    state = state_from_snapshot(snapshot)
+
+    assert phase_of(state) == "interview"
+    assert state.answered == transcript
+    assert state.level == "senior"
+    assert state.question == "What went wrong?"
+
+
+def test_a_finished_snapshot_recovers_the_report_phase() -> None:
+    transcript = [Turn(question="Tell me about a project.", answer="I led the migration.")]
+    grade = SessionGrade(scores=[])
+    coach = CoachReport(summary="Tighten the result.", answer_advice=[], drills=[], study_plan="")
+    snapshot = SessionSnapshot(
+        thread_id="t1",
+        question=None,
+        needs_level=False,
+        profile=profile(),
+        transcript=transcript,
+        finished=True,
+        closing="Thanks for walking me through it.",
+        grade=grade,
+        coach=coach,
+    )
+
+    state = state_from_snapshot(snapshot)
+
+    assert phase_of(state) == "report"
+    assert state.answered == transcript
+    assert state.transcript == transcript
+    assert state.closing == "Thanks for walking me through it."
+    assert state.coach is coach
+
+
 def interviewing(question: str) -> WebState:
-    return state_from_handle(
-        SessionHandle(thread_id="t1", question=question, needs_level=False, profile=profile())
+    return state_from_snapshot(
+        SessionSnapshot(thread_id="t1", question=question, needs_level=False, profile=profile())
     )
 
 

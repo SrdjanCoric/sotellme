@@ -148,6 +148,7 @@ def test_streamlit_run_command_launches_the_web_module_with_a_calm_accent() -> N
 
     assert command[:5] == ["/usr/bin/python", "-m", "streamlit", "run", "/pkg/web.py"]
     assert command[5] == "--theme.primaryColor=#4f6d7a"
+    assert command[6] == "--client.toolbarMode=minimal"
 
 
 def test_build_engine_wires_every_agent_from_its_own_role(
