@@ -148,5 +148,23 @@ uv sync
 uv run ruff check . && uv run mypy && uv run pytest
 ```
 
-The deterministic suite runs without API keys; the eval tests skip when no provider key
-is set. Langfuse tracing only kicks in when its env vars are set.
+The deterministic suite runs without any API keys, and it's the whole CI gate.
+
+The judgment agents (grader, coach, assessor, role builder, profile parser) are tuned
+separately in Langfuse. Stand up a local instance, export `LANGFUSE_PUBLIC_KEY`,
+`LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST`, then sync the committed cases and run one
+agent over its dataset:
+
+```sh
+uv sync --extra tracing
+uv run python scripts/evals.py upload
+uv run python scripts/evals.py run grader --limit 2   # small calibration run first
+uv run python scripts/evals.py run grader
+```
+
+Each run lands in Langfuse with a deterministic score per case, so you can read the
+outputs, edit a prompt, run it again, and compare the two runs side by side. It also
+prints the run's token count and estimated cost per model, priced from `models.toml`, so
+you can size a full run from a `--limit` sample before committing to it. Only the
+synthetic `evals/*.json` cases ever go in, and Langfuse stays off unless its env vars are
+set, for evals and for live-session tracing alike.

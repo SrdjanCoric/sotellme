@@ -129,3 +129,19 @@ def summarize_actual_cost(
     return CostSummary(
         per_model=tuple(per_model), total_tokens=total_tokens, usd=usd, saved_usd=saved_usd
     )
+
+
+def format_cost_summary(summary: CostSummary) -> str:
+    lines = [
+        f"Tokens used: {summary.total_tokens:,} · estimated cost: ${summary.usd:.2f} (estimate)."
+    ]
+    if summary.saved_usd > 0:
+        lines.append(f"Prompt caching saved about ${summary.saved_usd:.2f} (estimate).")
+    for entry in summary.per_model:
+        cost = f"${entry.usd:.2f}" if entry.usd is not None else "price not configured"
+        cached = f" ({entry.cached_input_tokens:,} cached)" if entry.cached_input_tokens else ""
+        lines.append(
+            f"  {entry.model}: {entry.input_tokens:,} in{cached} / "
+            f"{entry.output_tokens:,} out · {cost}"
+        )
+    return "\n".join(lines)
