@@ -1,0 +1,11 @@
+{
+  "name": "staff-terse",
+  "target_level": "staff",
+  "cv": "Priyanka Sundaram\nStaff Software Engineer\n\nMeridian Cloud (2016-present) - Staff Software Engineer\n- Set the multi-region storage strategy adopted org-wide; cut cross-region read latency p99 from 280ms to 70ms.\n- Created the company's API-versioning standard, now used by ~40 services.\n- Technical lead for a 25-engineer org's reliability program; halved Sev1s year over year.\n- Mentors senior engineers; chairs the architecture council.\n\nNorthwind Data (2011-2016) - Senior Engineer.\n\nEducation: MSc Distributed Systems, 2011.\n\nSkills: Go, Rust, distributed systems, Kubernetes, large-scale storage.",
+  "posting": "Staff Software Engineer, Meridian Cloud. Set technical strategy across the storage org, multiply the output of senior engineers, and own the highest-stakes, most ambiguous calls. We look for org-wide influence, systemic thinking, and a record of leveling up teams. 10+ years.",
+  "profile": "Genuinely staff-level, but answers in tight, high-signal sentences with no padding - states the decision, the trade-off, and the outcome in two or three lines, then stops. The terseness is confidence, not thinness; the STAR is complete but compressed. A weak interviewer mistakes brevity for an incomplete answer and over-probes.",
+  "base_behavior": "strong_terse",
+  "planted_turns": [
+    { "turn": 5, "behavior": "rambling" }
+  ]
+}

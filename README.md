@@ -109,8 +109,9 @@ There's no account and no server. Pick a provider with `SOTELLME_PROVIDER` (or
 | `anthropic`    | `ANTHROPIC_API_KEY` | claude-sonnet-4-6 / claude-opus-4-8   |
 | `openai`       | `OPENAI_API_KEY`    | gpt-5.4-mini / gpt-5.5                |
 
-The fast slot runs the interview side (CV parser, company researcher, director, answer
-assessor, interviewer); the smart slot runs the end-of-session grader and coach. You can
+The fast slot runs the interview side (CV parser, company researcher, answer assessor,
+interviewer); the smart slot runs the director — it makes every probe-or-move-on call —
+and the end-of-session grader and coach. You can
 override both with `SOTELLME_FAST_MODEL` and `SOTELLME_SMART_MODEL` or the matching
 flags. The eval suites run against `google_genai` with an `anthropic` judge, which is
 the combo I'd reach for.
@@ -168,3 +169,26 @@ prints the run's token count and estimated cost per model, priced from `models.t
 you can size a full run from a `--limit` sample before committing to it. Only the
 synthetic `evals/*.json` cases ever go in, and Langfuse stays off unless its env vars are
 set, for evals and for live-session tracing alike.
+
+The questions the system asks get their own eval. `scripts/simulate.py` runs a full
+interview against a synthetic candidate: the real interviewer and director loop ask, while
+a candidate-simulator answers in character from a persona under `evals/personas/`. The
+personas span every level from junior to staff and a mix of answering styles, complete
+STAR stories, thin answers, blurred ownership, off-topic drift, confident bluffing, and
+injection attempts, so a run also exercises the guardrail and how the loop recovers. An
+LLM judge on the smart slot scores each question on relevance, whether it probes the
+flagged gap, level-appropriateness, whether it leads the candidate, and follow-up
+discipline, plus a coverage verdict for the session.
+
+```sh
+uv run python scripts/simulate.py upload
+uv run python scripts/simulate.py run --persona senior-strong --persona junior-thin
+uv run python scripts/simulate.py run
+```
+
+Before a run it estimates the cost across the chosen personas and the judge passes and
+asks first for anything over $3.50; pass `--yes` to skip the prompt in a script. Each
+persona is a Langfuse dataset item tagged with its level and answer mix, so the
+question-quality scores compare run to run and slice by both, and the session transcripts
+land under `evals/sessions/`. The personas are synthetic, the same PII rule as everything
+else.

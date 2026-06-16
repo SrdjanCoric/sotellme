@@ -405,6 +405,10 @@ def _langfuse_client(env: Mapping[str, str]) -> Langfuse:
     return Langfuse(timeout=_resolve_timeout(env))
 
 
+def langfuse_client(env: Mapping[str, str]) -> Langfuse:
+    return _langfuse_client(env)
+
+
 def upload_datasets(
     specs: Sequence[AgentEval],
     evals_dir: Path,

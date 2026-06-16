@@ -1,0 +1,12 @@
+{
+  "name": "senior-strong",
+  "target_level": "senior",
+  "cv": "Naoki Brennan\nSenior Software Engineer\n\nArcwell Logistics (2019-present) - Senior Software Engineer\n- Led the re-architecture of the route-optimization service (Python/Go), cutting planning time from 9 minutes to 25 seconds for a 10k-stop network.\n- Drove the adoption of feature flags across four teams, reducing rollback incidents by ~60%.\n- Mentored three engineers to mid and senior; ran the design-review rotation.\n\nTidewater Systems (2015-2019) - Software Engineer\n- Built the real-time vehicle-tracking ingest (Kafka), 50k events/sec at peak.\n\nEducation: MSc Computer Science, 2015.\n\nSkills: Python, Go, Kafka, Postgres, Kubernetes, Terraform.",
+  "posting": "Senior Software Engineer, Arcwell Logistics. Lead design on our optimization platform, influence across teams, mentor engineers, and own the hard trade-offs under ambiguity. We look for strategic technical leadership, developing others, and a track record of measurable impact. Stack: Python/Go, Kafka, Kubernetes. 6+ years.",
+  "profile": "Strong senior who tells complete, quantified STAR stories with clear personal ownership and crisp trade-off reasoning. Names what he decided and why, and what he'd do differently. The benchmark for a good answer - useful for catching an interviewer that over-probes a strong response.",
+  "base_behavior": "complete_star",
+  "planted_turns": [
+    { "turn": 6, "behavior": "strong_terse" },
+    { "turn": 8, "behavior": "off_topic" }
+  ]
+}

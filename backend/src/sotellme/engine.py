@@ -397,7 +397,10 @@ class InterviewEngine:
         state = self._graph.get_state(self._config(thread_id))
         if state.next:
             values = state.values
-            return TurnResult(next_question=values.get("redirect") or values["question"])
+            return TurnResult(
+                next_question=values.get("redirect") or values["question"],
+                transcript=values.get("transcript", []),
+            )
         return TurnResult(
             next_question=None,
             closing=state.values.get("closing"),
