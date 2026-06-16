@@ -11,7 +11,6 @@ from sotellme.cli import (
     build_engine,
     build_parser,
     format_cost_estimate,
-    format_cost_summary,
     format_report_list,
     format_score_summary,
     parse_target_level,
@@ -22,7 +21,7 @@ from sotellme.cli import (
 )
 from sotellme.config import AGENT_ROLES, resolve_model_config
 from sotellme.grader import AnswerScore, SessionGrade
-from sotellme.pricing import CostEstimate, CostSummary, ModelCost
+from sotellme.pricing import CostEstimate, CostSummary, ModelCost, format_cost_summary
 
 
 def score(

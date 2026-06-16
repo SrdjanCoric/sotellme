@@ -2,9 +2,9 @@ import pytest
 from langchain_core.exceptions import OutputParserException
 from pydantic import ValidationError
 from stubs import StubChatModel
-from test_grader_evals import disagreements
 
 from sotellme.assessor import StarFlags
+from sotellme.eval_datasets import disagreements
 from sotellme.grader import AnswerScore, GradingError, SessionGrade, grade_session
 from sotellme.interviewer import Turn
 

@@ -44,8 +44,8 @@ from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.pricing import (
     TYPICAL_TURNS,
     CostEstimate,
-    CostSummary,
     estimate_session_cost,
+    format_cost_summary,
     summarize_actual_cost,
 )
 from sotellme.profile import ProfileParseError, parse_candidate_profile
@@ -111,22 +111,6 @@ def format_cost_estimate(estimate: CostEstimate) -> str:
         f"Estimated cost: about ${estimate.usd:.2f} for a ~{estimate.expected_turns}-question "
         f"interview on {estimate.model} (rough estimate; the real figure follows at the end)."
     )
-
-
-def format_cost_summary(summary: CostSummary) -> str:
-    lines = [
-        f"Tokens used: {summary.total_tokens:,} · estimated cost: ${summary.usd:.2f} (estimate)."
-    ]
-    if summary.saved_usd > 0:
-        lines.append(f"Prompt caching saved about ${summary.saved_usd:.2f} (estimate).")
-    for entry in summary.per_model:
-        cost = f"${entry.usd:.2f}" if entry.usd is not None else "price not configured"
-        cached = f" ({entry.cached_input_tokens:,} cached)" if entry.cached_input_tokens else ""
-        lines.append(
-            f"  {entry.model}: {entry.input_tokens:,} in{cached} / "
-            f"{entry.output_tokens:,} out · {cost}"
-        )
-    return "\n".join(lines)
 
 
 LEVEL_PROMPT = "What level is this interview for? (junior / mid / senior / staff)"
