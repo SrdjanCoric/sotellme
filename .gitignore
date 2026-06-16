@@ -12,10 +12,11 @@ scratch/
 issues/
 learn/
 
-# Secrets & environment
+# Archived web-era mockups (kept locally, out of the repo)
+archive/
+
+# Secrets & environment (.env.example is an example file and stays tracked)
 .env
-.env.*
-!.env.example
 *.local
 
 # Langfuse (self-hosted) data

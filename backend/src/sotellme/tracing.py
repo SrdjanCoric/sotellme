@@ -13,8 +13,9 @@ def langfuse_callbacks(env: Mapping[str, str]) -> list[BaseCallbackHandler]:
         return []
     if find_spec("langfuse") is None:
         raise TracingError(
-            "Langfuse env vars are set but the langfuse package is not installed. "
-            "Install it with: pip install 'sotellme[tracing]'"
+            "Langfuse tracing is on (LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are set), "
+            "but the langfuse package isn't installed. Install the tracing extra "
+            "(sotellme[tracing]), or unset those variables to run without tracing."
         )
     from langfuse.langchain import CallbackHandler
 

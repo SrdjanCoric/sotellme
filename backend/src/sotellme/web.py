@@ -34,7 +34,7 @@ from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import CandidateProfile
 from sotellme.report import render_report, write_report
 from sotellme.role import TargetLevel
-from sotellme.tracing import langfuse_callbacks
+from sotellme.tracing import TracingError, langfuse_callbacks
 
 DEFAULT_CHOICE = "— provider default —"
 
@@ -259,6 +259,17 @@ def run() -> None:
         _render_interview(engine, state)
 
 
+def _tracing_callbacks() -> list[BaseCallbackHandler]:
+    import streamlit as st
+
+    try:
+        return langfuse_callbacks(os.environ)
+    except TracingError as exc:
+        st.error(str(exc))
+        st.stop()
+        raise  # unreachable: st.stop() halts the run
+
+
 def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
     provider = default_provider(catalog, os.environ)
     if provider is None:
@@ -267,7 +278,7 @@ def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
         config = resolve_model_config(env=os.environ, provider=provider, catalog=catalog)
     except ModelConfigError:
         return None
-    return build_engine(config, langfuse_callbacks(os.environ))
+    return build_engine(config, _tracing_callbacks())
 
 
 def _recover(catalog: Catalog) -> WebState | None:
@@ -369,7 +380,7 @@ def _render_setup(catalog: Catalog) -> None:
             st.error(str(exc))
             return
     progress = _ModelProgress()
-    engine = build_engine(config, [*langfuse_callbacks(os.environ), progress])
+    engine = build_engine(config, [*_tracing_callbacks(), progress])
     st.session_state.progress = progress
     cv_path = save_upload(cv_file.name, cv_file.getvalue(), _upload_dir())
     with st.status("Reading your CV and researching the role…") as status:
