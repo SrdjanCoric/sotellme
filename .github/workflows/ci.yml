@@ -16,8 +16,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version-file: backend/.python-version
+      - run: python3 scripts/prepare_package.py
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy --strict src tests
+      - run: uv run mypy --strict
       - run: uv run pytest

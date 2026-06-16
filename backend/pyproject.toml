@@ -1,8 +1,23 @@
 [project]
 name = "sotellme"
 version = "0.1.0"
-description = "Behavioral interview simulator and coach — engine library"
+description = "A behavioral-interview simulator and coach that runs in your terminal."
+readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Srdjan Coric", email = "srdjan.coric1984@gmail.com" }]
+keywords = ["interview", "coaching", "behavioral", "llm", "cli", "langgraph"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Utilities",
+]
 dependencies = [
     "httpx>=0.27",
     "langchain>=1.3.8",
@@ -20,6 +35,11 @@ dependencies = [
 [project.optional-dependencies]
 tracing = ["langfuse>=3.0"]
 web = ["streamlit>=1.40"]
+
+[project.urls]
+Homepage = "https://github.com/SrdjanCoric/sotellme"
+Repository = "https://github.com/SrdjanCoric/sotellme"
+Issues = "https://github.com/SrdjanCoric/sotellme/issues"
 
 [project.scripts]
 sotellme = "sotellme.cli:main"
@@ -48,10 +68,12 @@ allowed-confusables = ["–"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "scripts/release_version.py", "scripts/prepare_package.py"]
+mypy_path = "scripts"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["scripts"]
 
 [[tool.mypy.overrides]]
 module = "langfuse.*"
