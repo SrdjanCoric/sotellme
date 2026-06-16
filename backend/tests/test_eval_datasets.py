@@ -60,9 +60,7 @@ def test_grader_single_answer_case_maps_to_a_labelled_item() -> None:
     [item] = spec.to_items([case], CTX)
 
     assert item.input["target_level"] == "senior"
-    assert item.input["turns"] == [
-        {"question": case["question"], "answer": case["answer"]}
-    ]
+    assert item.input["turns"] == [{"question": case["question"], "answer": case["answer"]}]
     assert item.expected_output == case["proposed"]
     assert item.id == "sotellme-grader:complete-quantified-single-team-senior"
 

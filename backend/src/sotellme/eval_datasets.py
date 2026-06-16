@@ -180,9 +180,11 @@ class GraderEval(AgentEval):
     model_slot = "smart"
 
     def to_input(self, case: dict[str, Any], ctx: EvalContext) -> dict[str, Any]:
-        turns = case["turns"] if "turns" in case else [
-            {"question": case["question"], "answer": case["answer"]}
-        ]
+        turns = (
+            case["turns"]
+            if "turns" in case
+            else [{"question": case["question"], "answer": case["answer"]}]
+        )
         return {"turns": turns, "target_level": case["target_level"]}
 
     def to_expected(self, case: dict[str, Any]) -> dict[str, Any]:
@@ -398,8 +400,7 @@ def _langfuse_client(env: Mapping[str, str]) -> Langfuse:
         from langfuse import Langfuse
     except ModuleNotFoundError as missing:
         raise TracingError(
-            "The langfuse package is not installed. Install it with: "
-            "uv sync --extra tracing"
+            "The langfuse package is not installed. Install it with: uv sync --extra tracing"
         ) from missing
     return Langfuse(timeout=_resolve_timeout(env))
 
