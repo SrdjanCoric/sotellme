@@ -16,7 +16,7 @@ AGENT_TIERS: dict[str, str] = {
     "parser": "fast",
     "researcher": "fast",
     "role_builder": "fast",
-    "director": "fast",
+    "director": "smart",
     "interviewer": "fast",
     "assessor": "fast",
     "guardrail": "fast",

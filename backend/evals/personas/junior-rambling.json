@@ -1,0 +1,11 @@
+{
+  "name": "junior-rambling",
+  "target_level": "junior",
+  "cv": "Bes Krasniqi\nJunior Software Engineer\n\nFernweh Travel (2023-present) - Associate Engineer\n- Built the in-app currency converter feature (React + a small Python service).\n- Took the on-call pager for a low-traffic internal tool; handled two minor incidents.\n- Wrote the team's onboarding doc for the local dev setup.\n\nFernweh Travel (2022-2023) - Engineering Intern, converted to full-time.\n\nEducation: BSc Software Engineering, 2022.\n\nSkills: JavaScript, React, Python, REST APIs, Git.",
+  "posting": "Junior Engineer, Fernweh Travel. Join the product team building traveler-facing features. You'll own small slices end to end, pair with seniors, and grow your debugging and delivery skills. We value curiosity, clear communication, and follow-through. Stack: TypeScript/React front end, Python services. 1-3 years.",
+  "profile": "Enthusiastic and genuinely involved, but buries the signal: long, winding answers with lots of context and tangents before the actual point. The STAR is usually in there somewhere - situation, task, action, result - but it takes a while to surface and wanders into unrelated detail.",
+  "base_behavior": "rambling",
+  "planted_turns": [
+    { "turn": 3, "behavior": "thin" }
+  ]
+}

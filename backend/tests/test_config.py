@@ -106,6 +106,7 @@ def test_every_agent_resolves_to_its_tier_default() -> None:
         provider="anthropic", model="claude-sonnet-4-6"
     )
     assert config.agents["researcher"].model == "claude-sonnet-4-6"
+    assert config.agents["director"] == AgentModel(provider="anthropic", model="claude-opus-4-8")
     assert config.agents["grader"] == AgentModel(provider="anthropic", model="claude-opus-4-8")
     assert config.agents["coach"].model == "claude-opus-4-8"
 

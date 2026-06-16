@@ -1,0 +1,11 @@
+{
+  "name": "mid-blurred-ownership",
+  "target_level": "mid",
+  "cv": "Iris Halloran\nSoftware Engineer\n\nPlumb & Co (2021-present) - Software Engineer\n- Worked on the payments reconciliation service (Java/Spring), processing ~2M transactions/day.\n- Part of the team that cut nightly batch runtime from 3 hours to 40 minutes.\n- Contributed to the migration off a monolith into three services.\n\nVellum Health (2019-2021) - Software Engineer\n- Built and maintained the appointment-scheduling API.\n\nEducation: BSc Computing, 2019.\n\nSkills: Java, Spring, PostgreSQL, Kafka, Docker, Kubernetes.",
+  "posting": "Software Engineer (mid-level), Plumb & Co. Own features in our payments platform, drive them from design to production, and take part in on-call. We look for initiative, sound judgment under ambiguity, and the ability to navigate disagreement constructively. Stack: Java/Spring, Kafka, PostgreSQL. 3-5 years.",
+  "profile": "Solid mid-level engineer who was genuinely in the work, but instinctively narrates in the first-person plural: 'we decided', 'we built', 'the team cut runtime'. Rarely says what she specifically owned or decided. Needs probing to separate her contribution from the team's. Otherwise candid and detailed.",
+  "base_behavior": "blurred_ownership",
+  "planted_turns": [
+    { "turn": 5, "behavior": "inappropriate" }
+  ]
+}

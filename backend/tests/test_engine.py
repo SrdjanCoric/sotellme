@@ -348,14 +348,14 @@ def test_a_finished_session_carries_the_full_transcript(tmp_path: Path) -> None:
     ]
 
 
-def test_an_unfinished_turn_carries_no_transcript(tmp_path: Path) -> None:
+def test_an_unfinished_turn_carries_the_running_transcript(tmp_path: Path) -> None:
     director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
     with build_engine(tmp_path / "data", director=director) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
         result = engine.submit_answer(session.thread_id, "We migrated the billing pipeline.")
 
     assert not result.finished
-    assert result.transcript == []
+    assert [turn.answer for turn in result.transcript] == ["We migrated the billing pipeline."]
 
 
 def test_the_grade_reads_the_session_target_level(tmp_path: Path) -> None:

@@ -34,5 +34,9 @@ dist/
 # Local data (real CVs, session artifacts — PII, never committed)
 data/
 
+# Generated session reports (may carry real-CV PII) and simulated-eval session artifacts
+sotellme-report-*.md
+backend/evals/sessions/
+
 # OS / editor
 .DS_Store
