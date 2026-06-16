@@ -22,6 +22,10 @@ learn/
 langfuse/
 *.db
 
+# Package build files staged from the repo root (see backend/scripts/prepare_package.py)
+backend/README.md
+backend/LICENSE
+
 # Python
 __pycache__/
 *.py[cod]
@@ -37,6 +41,9 @@ data/
 # Generated session reports (may carry real-CV PII) and simulated-eval session artifacts
 sotellme-report-*.md
 backend/evals/sessions/
+
+# Feature-review scaffolding (ephemeral, branch-scoped)
+reviews/
 
 # OS / editor
 .DS_Store
