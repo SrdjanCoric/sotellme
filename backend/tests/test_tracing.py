@@ -20,5 +20,9 @@ def test_configured_but_uninstalled_langfuse_is_a_clear_error(
 ) -> None:
     monkeypatch.setattr(sotellme.tracing, "find_spec", lambda name: None)
 
-    with pytest.raises(TracingError, match="sotellme\\[tracing\\]"):
+    with pytest.raises(TracingError) as exc_info:
         langfuse_callbacks(env={"LANGFUSE_PUBLIC_KEY": "pk", "LANGFUSE_SECRET_KEY": "sk"})
+
+    message = str(exc_info.value)
+    assert "sotellme[tracing]" in message
+    assert "without tracing" in message

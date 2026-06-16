@@ -1,5 +1,10 @@
+import sys
+import types
 from pathlib import Path
 
+import pytest
+
+import sotellme.tracing
 from sotellme.catalog import default_catalog
 from sotellme.coach import CoachReport
 from sotellme.config import AGENT_TAG_PREFIX, AgentModel
@@ -12,6 +17,7 @@ from sotellme.web import (
     LINK_MODE,
     TEXT_MODE,
     WebState,
+    _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
     chat_messages,
@@ -242,3 +248,37 @@ def test_pasted_posting_text_is_used_as_is() -> None:
 
 def test_an_empty_posting_resolves_to_nothing() -> None:
     assert posting_to_resolve(LINK_MODE, "   ", "ignored") == (None, True)
+
+
+class _StopRun(Exception):
+    pass
+
+
+def _fake_streamlit(shown: list[str]) -> types.SimpleNamespace:
+    def stop() -> None:
+        raise _StopRun()
+
+    return types.SimpleNamespace(error=shown.append, stop=stop)
+
+
+def test_tracing_callbacks_are_empty_when_langfuse_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_streamlit([]))
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+
+    assert _tracing_callbacks() == []
+
+
+def test_tracing_on_without_the_package_shows_a_message_and_stops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shown: list[str] = []
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_streamlit(shown))
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.setattr(sotellme.tracing, "find_spec", lambda name: None)
+
+    with pytest.raises(_StopRun):
+        _tracing_callbacks()
+
+    assert shown and "sotellme[tracing]" in shown[0]
