@@ -171,6 +171,24 @@ def test_explicit_agent_overrides_take_top_precedence() -> None:
     assert config.agents["grader"].model == "claude-haiku-4-5-20251001"
 
 
+def test_an_agent_override_with_an_unknown_provider_is_rejected() -> None:
+    with pytest.raises(ModelConfigError, match="copilot"):
+        resolve_model_config(
+            provider="anthropic",
+            env={"ANTHROPIC_API_KEY": "k"},
+            agent_overrides={"grader": AgentModel(provider="copilot", model="ghost-model")},
+        )
+
+
+def test_an_agent_override_pinned_to_an_unlisted_model_is_rejected() -> None:
+    with pytest.raises(ModelConfigError, match="ghost-model"):
+        resolve_model_config(
+            provider="anthropic",
+            env={"ANTHROPIC_API_KEY": "k"},
+            agent_overrides={"grader": AgentModel(provider="anthropic", model="ghost-model")},
+        )
+
+
 def test_build_chat_model_routes_an_agent_role(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     config = resolve_model_config(provider="anthropic", env={"ANTHROPIC_API_KEY": "sk-test"})

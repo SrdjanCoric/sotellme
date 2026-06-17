@@ -34,12 +34,13 @@ from sotellme.engine import (
     SessionSnapshot,
     TurnResult,
 )
+from sotellme.extraction import CVInputError
 from sotellme.grader import GradingError, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
-from sotellme.profile import CandidateProfile
+from sotellme.profile import CandidateProfile, ProfileParseError
 from sotellme.report import render_report, write_report
-from sotellme.role import TargetLevel
+from sotellme.role import RoleContextError, TargetLevel
 from sotellme.tracing import TracingError, langfuse_callbacks, langfuse_configured
 
 DEFAULT_CHOICE = "— provider default —"
@@ -55,6 +56,8 @@ TRACING_OFF_HINT = (
 HISTORY_HEIGHT = 300
 
 TURN_ERRORS = (AssessorError, DirectorError, GradingError, CoachingError, EngineError)
+
+SETUP_ERRORS = (*TURN_ERRORS, CVInputError, ProfileParseError, RoleContextError, OSError)
 
 DEFAULT_TEST_ANSWER = (
     "At my last role I led the migration of our billing service to a new datastore. "
@@ -423,7 +426,11 @@ def _render_history(catalog: Catalog, state: WebState | None) -> None:
     if engine is None:
         return
     if "history_items" not in st.session_state:
-        st.session_state.history_items = engine.list_sessions()
+        try:
+            st.session_state.history_items = engine.list_sessions()
+        except SETUP_ERRORS as exc:
+            st.caption(f"Past interviews are unavailable: {exc}")
+            return
     sessions = st.session_state.history_items
     if not sessions:
         return
@@ -507,11 +514,15 @@ def _render_setup(catalog: Catalog) -> None:
     progress = _ModelProgress()
     engine = build_engine(config, [*_tracing_callbacks(), progress])
     st.session_state.progress = progress
-    cv_path = save_upload(cv_file.name, cv_file.getvalue(), _upload_dir())
-    with st.status("Reading your CV and researching the role…", expanded=True) as status:
-        progress.aim(status, "Reading your CV and researching the role")
-        snapshot = engine.start(cv_path, posting_text=resolved_posting)
-        progress.clear()
+    try:
+        cv_path = save_upload(cv_file.name, cv_file.getvalue(), _upload_dir())
+        with st.status("Reading your CV and researching the role…", expanded=True) as status:
+            progress.aim(status, "Reading your CV and researching the role")
+            snapshot = engine.start(cv_path, posting_text=resolved_posting)
+            progress.clear()
+    except SETUP_ERRORS as exc:
+        st.error(str(exc))
+        return
     st.session_state.engine = engine
     st.session_state.state = state_from_snapshot(snapshot)
     st.session_state.pop("new_interview", None)
@@ -527,7 +538,12 @@ def _render_level(engine: InterviewEngine, state: WebState) -> None:
     if st.button("Continue", type="primary"):
         with st.status("Setting up the interview…", expanded=True) as status:
             _aim_progress(status, "Setting up the interview")
-            snapshot = engine.submit_level(state.thread_id, level)
+            try:
+                snapshot = engine.submit_level(state.thread_id, level)
+            except SETUP_ERRORS as exc:
+                status.update(state="error")
+                st.error(str(exc))
+                return
         st.session_state.state = state_from_snapshot(snapshot)
         st.rerun()
 

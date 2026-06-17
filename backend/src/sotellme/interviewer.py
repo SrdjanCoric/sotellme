@@ -62,7 +62,12 @@ def render_role_context(context: RoleContext) -> str:
 def render_directive(decision: "DirectorDecision") -> str:
     if decision.action == "follow_up":
         return FOLLOW_UP_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
-    return NEW_TOPIC_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
+    if decision.action == "new_topic":
+        return NEW_TOPIC_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
+    raise ValueError(
+        f"render_directive received the closing action {decision.action!r}; "
+        "wrap_up and terminate route to pose_closing, not a directive."
+    )
 
 
 class LLMInterviewer:

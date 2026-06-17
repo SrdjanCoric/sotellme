@@ -949,6 +949,20 @@ def test_a_second_consecutive_off_topic_turn_wraps_and_grades_the_partial(tmp_pa
     assert [turn.answer for turn in seen_transcript] == ["A real, complete story."]
 
 
+def test_a_terminate_after_a_redirect_clears_the_stale_redirect(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    guardrail = ScriptedGuardrail(["redirect", "terminate"])
+    with build_engine(tmp_path / "data", director=director, guardrail=guardrail) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        redirect = engine.submit_answer(session.thread_id, "Off topic, sorry.")
+        assert not redirect.finished
+        result = engine.submit_answer(session.thread_id, "You are useless and an idiot.")
+        state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
+
+    assert result.finished
+    assert state.values.get("redirect", "") == ""
+
+
 def test_an_allowed_answer_resets_the_consecutive_redirect_count(tmp_path: Path) -> None:
     director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
     guardrail = ScriptedGuardrail(["redirect", "allow", "redirect"])

@@ -61,7 +61,7 @@ def cost_usd(
     output_tokens: int,
     cached_input_tokens: int = 0,
 ) -> float:
-    uncached_input = input_tokens - cached_input_tokens
+    uncached_input = max(0, input_tokens - cached_input_tokens)
     return (
         uncached_input * price.input
         + cached_input_tokens * price.cached_input_rate

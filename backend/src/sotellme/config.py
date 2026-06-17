@@ -45,20 +45,27 @@ class ModelConfig(BaseModel):
     agents: dict[str, AgentModel]
 
 
+def _validate_agent(role: str, agent: AgentModel, catalog: Catalog) -> None:
+    if agent.provider not in catalog.providers:
+        valid = ", ".join(sorted(catalog.providers))
+        raise ModelConfigError(
+            f"Agent {role!r} names unknown provider {agent.provider!r}: {valid}."
+        )
+    if agent.model not in catalog.providers[agent.provider].models:
+        raise ModelConfigError(
+            f"Agent {role!r} names {agent.model!r}, which is not in the {agent.provider} catalog."
+        )
+
+
 def _agent_from_spec(role: str, spec: str, catalog: Catalog) -> AgentModel:
     provider, _, model = spec.partition(":")
     if not _ or not model:
         raise ModelConfigError(
             f"Agent {role!r} must be assigned as 'provider:model', not {spec!r}."
         )
-    if provider not in catalog.providers:
-        valid = ", ".join(sorted(catalog.providers))
-        raise ModelConfigError(f"Agent {role!r} names unknown provider {provider!r}: {valid}.")
-    if model not in catalog.providers[provider].models:
-        raise ModelConfigError(
-            f"Agent {role!r} names {model!r}, which is not in the {provider} catalog."
-        )
-    return AgentModel(provider=provider, model=model)
+    agent = AgentModel(provider=provider, model=model)
+    _validate_agent(role, agent, catalog)
+    return agent
 
 
 def _require_keys(agents: Mapping[str, AgentModel], env: Mapping[str, str]) -> None:
@@ -104,6 +111,7 @@ def resolve_model_config(
             raise ModelConfigError(f"Unknown agent {role!r} in the catalog: choose one of {valid}.")
         agents[role] = _agent_from_spec(role, spec, catalog)
     for role, override in (agent_overrides or {}).items():
+        _validate_agent(role, override, catalog)
         agents[role] = override
 
     _require_keys(agents, env)

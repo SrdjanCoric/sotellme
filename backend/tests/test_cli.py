@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 import sotellme.cli as cli
 import sotellme.tracing
@@ -20,9 +21,14 @@ from sotellme.cli import (
     streamlit_run_command,
     strip_done_sentinel,
 )
+from sotellme.coach import CoachReport
 from sotellme.config import AGENT_ROLES, resolve_model_config
+from sotellme.engine import SessionSnapshot, TurnResult
 from sotellme.grader import AnswerScore, SessionGrade
+from sotellme.guardrail import GuardrailError
+from sotellme.interviewer import Turn
 from sotellme.pricing import CostEstimate, CostSummary, ModelCost, format_cost_summary
+from sotellme.profile import CandidateProfile, Role
 
 
 def score(
@@ -366,6 +372,87 @@ def test_cost_summary_stays_quiet_about_caching_when_nothing_was_cached() -> Non
 
     assert "cached" not in summary.lower()
     assert "saved" not in summary.lower()
+
+
+class _FailingStartEngine:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __enter__(self) -> "_FailingStartEngine":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def start(self, *args: object, **kwargs: object) -> object:
+        raise self._error
+
+
+def test_main_reports_a_guardrail_failure_as_a_clean_message(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SOTELLME_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SOTELLME_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    failing = _FailingStartEngine(GuardrailError("Could not screen."))
+    monkeypatch.setattr(cli, "build_engine", lambda *a, **k: failing)
+
+    code = cli.main(["interview", "--cv", "cv.md"])
+
+    assert code == 1
+    assert "Could not screen." in capsys.readouterr().out
+
+
+def _profile() -> CandidateProfile:
+    return CandidateProfile(
+        roles=[Role(title="Engineer", organization="Acme")],
+        projects=[],
+        quantified_claims=[],
+        technologies=[],
+    )
+
+
+class _FinishingEngine:
+    def __init__(self, grade: SessionGrade, coach: CoachReport) -> None:
+        self._grade = grade
+        self._coach = coach
+
+    def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
+        return TurnResult(
+            next_question=None,
+            closing="Thanks for walking me through it.",
+            grade=self._grade,
+            coach=self._coach,
+            transcript=[Turn(question="Tell me about a project.", answer=answer)],
+        )
+
+    def session_usage(self) -> dict[str, object]:
+        return {}
+
+
+def test_run_session_survives_an_unwritable_report_directory(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "_interactive", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda *a: "")
+
+    def unwritable(*args: object, **kwargs: object) -> Path:
+        raise OSError("Read-only file system")
+
+    monkeypatch.setattr(cli, "write_report", unwritable)
+    grade = SessionGrade(scores=[score("Tell me about a project.")])
+    coach = CoachReport(summary="Tighten the result.", answer_advice=[], drills=[], study_plan="")
+    engine = _FinishingEngine(grade, coach)
+    session = SessionSnapshot(
+        thread_id="t1",
+        profile=_profile(),
+        needs_level=False,
+        question="Tell me about a project.",
+    )
+
+    cli._run_session(Console(), engine, session, {})  # type: ignore[arg-type]
+
+    assert "Read-only file system" in capsys.readouterr().out
 
 
 def test_cost_summary_flags_models_it_could_not_price() -> None:

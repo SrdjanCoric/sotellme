@@ -164,8 +164,8 @@ def _download(
 
 def fetch_posting_text(value: str, transport: httpx.BaseTransport | None = None) -> str:
     url = _normalize_url(value)
-    api_url = _workable_api_url(url)
     try:
+        api_url = _workable_api_url(url)
         body, content_type = _download(api_url or url, transport)
     except httpx.HTTPStatusError as exc:
         raise PostingFetchError(
@@ -173,6 +173,10 @@ def fetch_posting_text(value: str, transport: httpx.BaseTransport | None = None)
         ) from exc
     except httpx.HTTPError as exc:
         raise PostingFetchError(f"Could not fetch the link: {exc}. {PASTE_FALLBACK}") from exc
+    except (ValueError, httpx.InvalidURL) as exc:
+        raise PostingFetchError(
+            f"That doesn't look like a valid link: {exc}. {PASTE_FALLBACK}"
+        ) from exc
     if api_url is not None:
         text = _workable_posting_text(body)
     elif "html" in content_type:
@@ -212,8 +216,8 @@ def fetch_research_page(url: str, transport: httpx.BaseTransport | None = None) 
     def check_each_hop(request: httpx.Request) -> None:
         _refuse_unsafe_host(request.url)
 
-    _refuse_unsafe_host(httpx.URL(url))
     try:
+        _refuse_unsafe_host(httpx.URL(url))
         body, content_type = _download(url, transport, request_hook=check_each_hop)
     except ResearchFetchError:
         raise
@@ -223,6 +227,8 @@ def fetch_research_page(url: str, transport: httpx.BaseTransport | None = None) 
         ) from exc
     except httpx.HTTPError as exc:
         raise ResearchFetchError(f"Could not fetch the page: {exc}.") from exc
+    except (ValueError, httpx.InvalidURL) as exc:
+        raise ResearchFetchError(f"That doesn't look like a valid link: {exc}.") from exc
     text = html_to_text(body) if "html" in content_type else body
     if not text.strip():
         raise ResearchFetchError("No readable text found on the page.")

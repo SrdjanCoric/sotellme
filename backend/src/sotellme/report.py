@@ -43,10 +43,20 @@ def render_report(report: CoachReport, transcript: Sequence[Turn]) -> str:
     return "\n\n".join(sections) + "\n"
 
 
+def _free_report_path(directory: Path, filename: str) -> Path:
+    candidate = directory / filename
+    stem, suffix = candidate.stem, candidate.suffix
+    counter = 2
+    while candidate.exists():
+        candidate = directory / f"{stem}-{counter}{suffix}"
+        counter += 1
+    return candidate
+
+
 def write_report(
     report: CoachReport, transcript: Sequence[Turn], directory: Path, when: datetime
 ) -> Path:
-    path = directory / report_filename(when)
+    path = _free_report_path(directory, report_filename(when))
     path.write_text(render_report(report, transcript))
     return path
 
