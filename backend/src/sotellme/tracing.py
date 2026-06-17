@@ -8,8 +8,12 @@ class TracingError(Exception):
     pass
 
 
+def langfuse_configured(env: Mapping[str, str]) -> bool:
+    return bool(env.get("LANGFUSE_PUBLIC_KEY") and env.get("LANGFUSE_SECRET_KEY"))
+
+
 def langfuse_callbacks(env: Mapping[str, str]) -> list[BaseCallbackHandler]:
-    if not (env.get("LANGFUSE_PUBLIC_KEY") and env.get("LANGFUSE_SECRET_KEY")):
+    if not langfuse_configured(env):
         return []
     if find_spec("langfuse") is None:
         raise TracingError(

@@ -3,7 +3,7 @@ import sys
 import pytest
 
 import sotellme.tracing
-from sotellme.tracing import TracingError, langfuse_callbacks
+from sotellme.tracing import TracingError, langfuse_callbacks, langfuse_configured
 
 
 def test_absent_env_vars_mean_no_callbacks_and_no_import() -> None:
@@ -13,6 +13,15 @@ def test_absent_env_vars_mean_no_callbacks_and_no_import() -> None:
 
 def test_partial_env_vars_mean_no_callbacks() -> None:
     assert langfuse_callbacks(env={"LANGFUSE_PUBLIC_KEY": "pk"}) == []
+
+
+def test_langfuse_is_unconfigured_by_default() -> None:
+    assert langfuse_configured(env={}) is False
+    assert langfuse_configured(env={"LANGFUSE_PUBLIC_KEY": "pk"}) is False
+
+
+def test_langfuse_is_configured_only_when_both_keys_are_set() -> None:
+    assert langfuse_configured(env={"LANGFUSE_PUBLIC_KEY": "pk", "LANGFUSE_SECRET_KEY": "sk"})
 
 
 def test_configured_but_uninstalled_langfuse_is_a_clear_error(
