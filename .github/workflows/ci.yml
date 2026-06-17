@@ -12,10 +12,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8
         with:
-          python-version-file: backend/.python-version
+          working-directory: backend
       - run: python3 scripts/prepare_package.py
       - run: uv sync
       - run: uv run ruff check .
