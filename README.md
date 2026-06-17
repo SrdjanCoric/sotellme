@@ -189,3 +189,23 @@ persona is a Langfuse dataset item tagged with its level and answer mix, so the
 question-quality scores compare run to run and slice by both, and the session transcripts
 land under `evals/sessions/`. The personas are synthetic, the same PII rule as everything
 else.
+
+Re-tuning the grader or coach doesn't mean paying for those interviews again.
+`scripts/simulate.py replay` forks each stored session at the checkpoint just before
+grading and re-runs only grade and coach with the current code, so the interviewer,
+director, and simulated answers never fire. It rewrites the `evals/sessions/` artifacts in
+place and prints a per-persona before/after score delta plus the cost, which is the
+feedback pass alone. A session that hit the turn cap without closing has no pre-grade
+checkpoint to fork, so it's reported and skipped instead of erroring.
+
+```sh
+uv run python scripts/simulate.py replay
+uv run python scripts/simulate.py replay --persona senior-strong
+```
+
+When you're iterating on the coach prompt alone, `--from coach` forks one step later and
+re-runs only coach, reusing the stored grade for one fewer call per session.
+
+```sh
+uv run python scripts/simulate.py replay --from coach
+```

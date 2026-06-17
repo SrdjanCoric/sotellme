@@ -7,6 +7,7 @@ from sotellme.assessor import AnswerAssessment, StarFlags, TopicAssessment
 from sotellme.catalog import ModelPrice
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import SessionSnapshot, TurnResult
+from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.judge import (
     CompetencyCoverage,
@@ -16,6 +17,7 @@ from sotellme.judge import (
     QuestionVerdict,
 )
 from sotellme.personas import Persona
+from sotellme.pricing import ModelUsage
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import CompetencyWeight, RoleContext, TargetLevel
 from sotellme.simulation import (
@@ -28,6 +30,7 @@ from sotellme.simulation import (
     confirm_run,
     estimate_run_cost,
     judge_session,
+    replay_sessions,
     simulate_session,
     write_persona_cv,
     write_session_artifact,
@@ -102,6 +105,16 @@ def test_simulate_session_drives_the_interview_to_completion(tmp_path: Path) -> 
     assert [t.question for t in session.transcript] == ["Q1", "Q2", "Q3"]
     assert session.finished_reason == "completed"
     assert session.persona == "senior-strong"
+
+
+def test_simulate_session_records_the_thread_id_for_replay(tmp_path: Path) -> None:
+    engine = FakeEngine(["Q1", "Q2"])
+
+    session = simulate_session(
+        engine, EchoSimulator(), _persona(), tmp_path / "cv.md", TurnRecorder(), max_turns=20
+    )
+
+    assert session.thread_id == "t"
 
 
 class SpySimulator:
@@ -361,3 +374,94 @@ def test_judge_session_judges_every_question_and_coverage() -> None:
     assert judgement.coverage == coverage
     assert judgement.dimension_means["relevance"] == 4.0
     assert judgement.dimension_means["follow_up_discipline"] == 4.0
+
+
+def _grade(score: int) -> SessionGrade:
+    return SessionGrade(
+        scores=[
+            AnswerScore(
+                question="Q1",
+                star=StarFlags(
+                    situation=True, task=True, action=True, result=True, quantified_result=True
+                ),
+                specificity="high",
+                ownership="clear",
+                weak_or_missing=[],
+                gap="",
+                rationale="r",
+                score=score,
+            )
+        ]
+    )
+
+
+class FakeReplayEngine:
+    def __init__(self, grade: SessionGrade) -> None:
+        self._grade = grade
+        self.replayed: list[tuple[str, str]] = []
+
+    def replay_from(self, thread_id: str, node: str) -> TurnResult:
+        self.replayed.append((thread_id, node))
+        return TurnResult(next_question=None, grade=self._grade, coach=None, transcript=[])
+
+    def session_usage(self) -> dict[str, ModelUsage]:
+        return {}
+
+
+def test_replay_sessions_regrades_stored_sessions_and_skips_the_ungradable(tmp_path: Path) -> None:
+    artifacts = tmp_path / "sessions"
+    write_session_artifact(
+        SimulatedSession(
+            persona="senior-strong", target_level="senior", thread_id="t1", grade=_grade(2)
+        ),
+        artifacts,
+    )
+    write_session_artifact(
+        SimulatedSession(
+            persona="junior-thin",
+            target_level="junior",
+            thread_id="t2",
+            grade=None,
+            finished_reason="max_turns",
+        ),
+        artifacts,
+    )
+    write_session_artifact(
+        SimulatedSession(persona="mid-pre", target_level="mid", thread_id=None, grade=_grade(3)),
+        artifacts,
+    )
+    personas = [
+        _persona(name="senior-strong"),
+        _persona(name="junior-thin", target_level="junior"),
+        _persona(name="mid-pre", target_level="mid"),
+        _persona(name="staff-missing", target_level="staff"),
+    ]
+    engine = FakeReplayEngine(_grade(4))
+
+    report = replay_sessions(engine, personas, artifacts, _PRICES)
+
+    assert engine.replayed == [("t1", "grade")]
+    reloaded = SimulatedSession.model_validate_json((artifacts / "senior-strong.json").read_text())
+    assert reloaded.grade is not None
+    assert [s.score for s in reloaded.grade.scores] == [4]
+    assert "junior-thin" in report and "never reached grading" in report
+    assert "mid-pre" in report and "replay support" in report
+    assert "staff-missing" in report and "no stored session" in report
+
+
+def test_replay_sessions_passes_the_stage_through_to_the_engine(tmp_path: Path) -> None:
+    artifacts = tmp_path / "sessions"
+    write_session_artifact(
+        SimulatedSession(
+            persona="senior-strong", target_level="senior", thread_id="t1", grade=_grade(3)
+        ),
+        artifacts,
+    )
+    engine = FakeReplayEngine(_grade(3))
+
+    report = replay_sessions(
+        engine, [_persona(name="senior-strong")], artifacts, _PRICES, stage="coach"
+    )
+
+    assert engine.replayed == [("t1", "coach")]
+    assert "recoach senior-strong" in report

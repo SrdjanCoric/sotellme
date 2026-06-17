@@ -19,7 +19,7 @@ from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.judge import CoverageVerdict, QuestionContext, QuestionVerdict
 from sotellme.personas import Persona
-from sotellme.pricing import cost_usd
+from sotellme.pricing import ModelUsage, cost_usd, format_cost_summary, summarize_actual_cost
 from sotellme.profile import CandidateProfile
 from sotellme.role import RoleContext, TargetLevel
 
@@ -136,6 +136,12 @@ class Simulator(Protocol):
     def answer(self, persona: Persona, question: str, transcript: Sequence[Turn]) -> str: ...
 
 
+class ReplayEngine(Protocol):
+    def replay_from(self, thread_id: str, node: str) -> TurnResult: ...
+
+    def session_usage(self) -> dict[str, ModelUsage]: ...
+
+
 class QuestionRecord(BaseModel):
     question: str
     competency: str
@@ -160,6 +166,7 @@ class QuestionRecord(BaseModel):
 class SimulatedSession(BaseModel):
     persona: str
     target_level: TargetLevel
+    thread_id: str | None = None
     transcript: list[Turn] = []
     questions: list[QuestionRecord] = []
     closing: str | None = None
@@ -403,6 +410,7 @@ def simulate_session(
     return SimulatedSession(
         persona=persona.name,
         target_level=persona.target_level,
+        thread_id=thread_id,
         transcript=transcript,
         questions=recorder.records,
         closing=result.closing if result else None,
@@ -411,3 +419,64 @@ def simulate_session(
         turns=turns,
         finished_reason=finished_reason,
     )
+
+
+def replay_skip_reason(session: SimulatedSession) -> str | None:
+    if session.thread_id is None:
+        return "stored before replay support; re-run it to capture its checkpoint"
+    if session.grade is None:
+        return f"never reached grading ({session.finished_reason}); no checkpoint to fork"
+    return None
+
+
+def _mean_score(grade: SessionGrade | None) -> str:
+    if grade is None or not grade.scores:
+        return "n/a"
+    return f"{sum(score.score for score in grade.scores) / len(grade.scores):.2f}"
+
+
+def format_replay_delta(
+    persona: str, stage: str, before: SessionGrade | None, after: SessionGrade | None
+) -> str:
+    count = len(after.scores) if after else 0
+    if stage == "coach":
+        return (
+            f"recoach {persona}: coach refreshed, grade kept at "
+            f"{_mean_score(after)} ({count} answers)"
+        )
+    return (
+        f"replay {persona}: mean score {_mean_score(before)} -> "
+        f"{_mean_score(after)} ({count} answers)"
+    )
+
+
+def replay_sessions(
+    engine: ReplayEngine,
+    personas: Sequence[Persona],
+    artifacts_dir: Path,
+    prices: Mapping[str, ModelPrice],
+    stage: str = "grade",
+) -> str:
+    lines: list[str] = []
+    for persona in personas:
+        path = artifacts_dir / f"{persona.name}.json"
+        if not path.exists():
+            lines.append(f"skip {persona.name}: no stored session; run it first")
+            continue
+        session = SimulatedSession.model_validate_json(path.read_text())
+        reason = replay_skip_reason(session)
+        if reason is not None:
+            lines.append(f"skip {persona.name}: {reason}")
+            continue
+        assert session.thread_id is not None
+        before = session.grade
+        result = engine.replay_from(session.thread_id, stage)
+        session.grade = result.grade
+        session.coach = result.coach
+        if result.closing:
+            session.closing = result.closing
+        write_session_artifact(session, artifacts_dir)
+        lines.append(format_replay_delta(persona.name, stage, before, result.grade))
+    cost = format_cost_summary(summarize_actual_cost(engine.session_usage(), prices))
+    body = "\n".join(lines) if lines else "No sessions to replay."
+    return f"{body}\n\n{cost}"
