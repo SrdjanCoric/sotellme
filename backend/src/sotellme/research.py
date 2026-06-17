@@ -54,6 +54,6 @@ def build_company_brief(
                     content = fetcher(str(call["args"].get("url", "")))
                 except Exception as exc:  # a failed fetch must never kill the session
                     content = f"Could not fetch the page: {exc}"
-            messages.append(ToolMessage(content=content, tool_call_id=call["id"] or ""))
+            messages.append(ToolMessage(content=content, tool_call_id=call.get("id") or ""))
     messages.append(HumanMessage(RESEARCH_WRAP_INSTRUCTION))
     return model.invoke(messages).text.strip()

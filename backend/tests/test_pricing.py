@@ -53,6 +53,15 @@ def test_only_the_cached_portion_of_input_is_discounted() -> None:
     assert cost == (600_000 * 10.0 + 400_000 * 1.0) / 1_000_000
 
 
+def test_cost_never_goes_negative_when_cached_exceeds_input() -> None:
+    price = ModelPrice(input=10.0, output=20.0, cached_input=1.0)
+
+    cost = cost_usd(price, input_tokens=100, output_tokens=0, cached_input_tokens=1_000)
+
+    assert cost == 1_000 * 1.0 / 1_000_000
+    assert cost >= 0
+
+
 def test_a_longer_interview_is_estimated_to_cost_more() -> None:
     short = estimate_session_cost("cheap", expected_turns=5, prices=PRICES)
     longer = estimate_session_cost("cheap", expected_turns=15, prices=PRICES)

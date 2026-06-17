@@ -17,7 +17,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from sotellme.budget import BudgetCallback
 from sotellme.catalog import ModelPrice
 from sotellme.config import ModelConfig, build_chat_model
-from sotellme.eval_datasets import langfuse_client
+from sotellme.eval_datasets import apply_limit, langfuse_client
 from sotellme.judge import QuestionJudge
 from sotellme.personas import Persona
 from sotellme.pricing import format_cost_summary, summarize_actual_cost
@@ -105,9 +105,7 @@ def run_simulation_experiment(
     judge = QuestionJudge(judge_model, config.provider)
 
     dataset = client.get_dataset(dataset_name)
-    items = select_persona_items(dataset.items, persona_names)
-    if limit:
-        items = items[:limit]
+    items = apply_limit(select_persona_items(dataset.items, persona_names), limit)
 
     def task(*, item: Any, **_: Any) -> dict[str, Any]:
         persona = Persona.model_validate(item.input)

@@ -8,16 +8,21 @@ import sotellme.tracing
 from sotellme.catalog import default_catalog
 from sotellme.coach import CoachReport
 from sotellme.config import AGENT_TAG_PREFIX, AgentModel
-from sotellme.engine import SessionListItem, SessionSnapshot, TurnResult
+from sotellme.engine import EngineError, SessionListItem, SessionSnapshot, TurnResult
+from sotellme.extraction import CVInputError
 from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
-from sotellme.profile import CandidateProfile, Role
+from sotellme.profile import CandidateProfile, ProfileParseError, Role
+from sotellme.role import RoleContextError
 from sotellme.web import (
     DEFAULT_CHOICE,
     LINK_MODE,
+    SETUP_ERRORS,
     TEXT_MODE,
+    TURN_ERRORS,
     WebState,
     _ModelProgress,
+    _render_level,
     _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
@@ -43,6 +48,53 @@ def profile() -> CandidateProfile:
         quantified_claims=[],
         technologies=[],
     )
+
+
+def test_setup_errors_extend_turn_errors_with_the_setup_input_failures() -> None:
+    assert set(TURN_ERRORS).issubset(SETUP_ERRORS)
+    for error in (CVInputError, ProfileParseError, RoleContextError, OSError):
+        assert error in SETUP_ERRORS
+
+
+class _FakeStatusContext:
+    def __enter__(self) -> "_FakeStatusContext":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def update(self, **kwargs: object) -> None:
+        return None
+
+
+def _fake_render_streamlit(shown: list[str]) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        info=lambda *a, **k: None,
+        selectbox=lambda label, options, **k: next(iter(options)),
+        button=lambda *a, **k: True,
+        status=lambda *a, **k: _FakeStatusContext(),
+        error=shown.append,
+        session_state={},
+    )
+
+
+class _RaisingLevelEngine:
+    def submit_level(self, thread_id: str, level: str) -> object:
+        raise EngineError("the level could not be set")
+
+
+def test_render_level_surfaces_a_setup_error_instead_of_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shown: list[str] = []
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_render_streamlit(shown))
+    state = state_from_snapshot(
+        SessionSnapshot(thread_id="t1", question=None, needs_level=True, profile=profile())
+    )
+
+    _render_level(_RaisingLevelEngine(), state)  # type: ignore[arg-type]
+
+    assert shown == ["the level could not be set"]
 
 
 def test_no_state_is_the_setup_phase() -> None:

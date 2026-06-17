@@ -38,7 +38,7 @@ from sotellme.engine import (
 from sotellme.extraction import CVInputError
 from sotellme.fetch import fetch_research_page
 from sotellme.grader import GradingError, SessionGrade, grade_session
-from sotellme.guardrail import LLMGuardrail
+from sotellme.guardrail import GuardrailError, LLMGuardrail
 from sotellme.interviewer import LLMInterviewer, Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.pricing import (
@@ -436,10 +436,14 @@ def _run_session(
     if grade is not None:
         console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
     if coach is not None and grade is not None and grade.scores:
-        path = write_report(coach, transcript, Path.cwd(), datetime.now())
-        if coach.summary.strip():
-            console.print(Panel(coach.summary.strip(), title="Coaching", border_style="green"))
-        console.print(f"\n[bold]Your full coaching report:[/bold] {path}")
+        try:
+            path = write_report(coach, transcript, Path.cwd(), datetime.now())
+        except OSError as exc:
+            console.print(f"[red]Could not save the coaching report: {exc}[/red]")
+        else:
+            if coach.summary.strip():
+                console.print(Panel(coach.summary.strip(), title="Coaching", border_style="green"))
+            console.print(f"\n[bold]Your full coaching report:[/bold] {path}")
     else:
         console.print(f"\n[dim]{NO_COACHING_MESSAGE}[/dim]")
     summary = summarize_actual_cost(engine.session_usage(), prices)
@@ -526,6 +530,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         DirectorError,
         GradingError,
         CoachingError,
+        GuardrailError,
         TranscriptInputError,
         EngineError,
     ) as exc:

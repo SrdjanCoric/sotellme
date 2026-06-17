@@ -1,3 +1,4 @@
+import pytest
 from stubs import StubChatModel
 
 from sotellme.director import DirectorDecision
@@ -78,6 +79,13 @@ def test_a_new_topic_directive_names_the_topic() -> None:
 
     assert "The interview now turns to: their most significant project." in directive
     assert "the deep dive" in directive
+
+
+def test_render_directive_refuses_a_closing_action() -> None:
+    for action in ("wrap_up", "terminate"):
+        decision = DirectorDecision(action=action, reason="the session is over")
+        with pytest.raises(ValueError, match="closing"):
+            render_directive(decision)
 
 
 def test_a_follow_up_directive_becomes_a_question_with_full_grounding() -> None:

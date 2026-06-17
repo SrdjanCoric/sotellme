@@ -83,6 +83,11 @@ def test_an_empty_page_is_rejected() -> None:
         fetch_posting_text("https://jobs.acme.com/blank", transport=transport)
 
 
+def test_a_malformed_posting_url_is_a_clean_error() -> None:
+    with pytest.raises(PostingFetchError, match="paste the posting text"):
+        fetch_posting_text("http://[invalid ipv6]")
+
+
 JOB_POSTING_PAGE = (
     "<html><head>"
     '<script type="application/ld+json">'
@@ -236,6 +241,11 @@ def test_a_redirect_to_a_private_host_is_refused() -> None:
 
     with pytest.raises(ResearchFetchError, match="refused"):
         fetch_research_page("https://acme.com/about", transport=httpx.MockTransport(handler))
+
+
+def test_a_malformed_research_url_is_a_clean_error() -> None:
+    with pytest.raises(ResearchFetchError, match="valid link"):
+        fetch_research_page("http://[invalid ipv6]")
 
 
 def test_a_failed_research_fetch_is_a_clear_error() -> None:

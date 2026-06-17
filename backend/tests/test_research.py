@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from langchain_core.messages import AIMessage, ToolMessage
 from stubs import ToolLoopStubModel
 
@@ -90,6 +92,16 @@ def test_a_failed_fetch_becomes_tool_feedback_not_a_crash() -> None:
         if isinstance(message, ToolMessage) and "connection reset" in str(message.content)
     ]
     assert failures
+
+
+def test_a_tool_call_without_an_id_does_not_crash() -> None:
+    request = fetch_request("https://acme.com")
+    cast(dict[str, Any], request.tool_calls[0]).pop("id", None)
+    model = ToolLoopStubModel(script=[request, AIMessage(BRIEF)])
+
+    brief = build_company_brief(POSTING, CONTEXT, model, RecordingFetcher())
+
+    assert brief == BRIEF
 
 
 def test_fetched_pages_are_framed_as_untrusted_data() -> None:

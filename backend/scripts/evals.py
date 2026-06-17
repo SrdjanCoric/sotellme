@@ -14,6 +14,8 @@ import os
 import sys
 from pathlib import Path
 
+from langchain_core.language_models import BaseChatModel
+
 from sotellme.catalog import CatalogError, load_catalog
 from sotellme.config import ModelConfigError, build_chat_model, resolve_model_config
 from sotellme.eval_datasets import EvalContext, dataset_specs, run_dataset, upload_datasets
@@ -30,7 +32,7 @@ def _add_model_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--smart-model", help="Override the smart model slot.")
 
 
-def _build_models(args: argparse.Namespace) -> dict[str, object]:
+def _build_models(args: argparse.Namespace) -> dict[str, BaseChatModel]:
     config = resolve_model_config(
         env=os.environ,
         provider=args.provider,

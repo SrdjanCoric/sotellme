@@ -105,6 +105,19 @@ def test_write_report_writes_the_rendered_markdown_and_returns_the_path(tmp_path
     assert path.read_text() == render_report(a_coach_report(), a_transcript())
 
 
+def test_write_report_suffixes_on_a_same_second_collision(tmp_path: Path) -> None:
+    when = datetime(2026, 6, 14, 9, 5, 3)
+
+    first = write_report(a_coach_report(), a_transcript(), tmp_path, when)
+    second = write_report(a_coach_report(), a_transcript(), tmp_path, when)
+    third = write_report(a_coach_report(), a_transcript(), tmp_path, when)
+
+    assert first.name == "sotellme-report-20260614-090503.md"
+    assert second.name == "sotellme-report-20260614-090503-2.md"
+    assert third.name == "sotellme-report-20260614-090503-3.md"
+    assert first.exists() and second.exists() and third.exists()
+
+
 def test_list_reports_returns_report_files_newest_first(tmp_path: Path) -> None:
     write_report(a_coach_report(), a_transcript(), tmp_path, datetime(2026, 6, 10, 8, 0, 0))
     write_report(a_coach_report(), a_transcript(), tmp_path, datetime(2026, 6, 14, 8, 0, 0))

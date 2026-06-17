@@ -5,6 +5,7 @@ from sotellme.eval_datasets import (
     DEFAULT_LANGFUSE_TIMEOUT,
     EvalContext,
     _resolve_timeout,
+    apply_limit,
     build_items,
     dataset_specs,
 )
@@ -24,6 +25,18 @@ def test_resolve_timeout_defaults_when_unset() -> None:
 
 def test_resolve_timeout_falls_back_on_a_non_integer() -> None:
     assert _resolve_timeout({"LANGFUSE_TIMEOUT": "soon"}) == DEFAULT_LANGFUSE_TIMEOUT
+
+
+def test_apply_limit_of_zero_selects_nothing() -> None:
+    assert apply_limit([1, 2, 3], 0) == []
+
+
+def test_apply_limit_of_none_keeps_every_item() -> None:
+    assert apply_limit([1, 2, 3], None) == [1, 2, 3]
+
+
+def test_apply_limit_caps_to_the_requested_count() -> None:
+    assert apply_limit([1, 2, 3], 2) == [1, 2]
 
 
 def test_every_committed_case_file_maps_through_its_spec() -> None:

@@ -48,6 +48,14 @@ class EvalScore:
     comment: str = ""
 
 
+def apply_limit(items: Sequence[Any], limit: int | None) -> list[Any]:
+    """Keep the first `limit` items; `limit=0` selects nothing and `None` keeps them all. Guards
+    the falsy-zero trap where `if limit` treats `--limit 0` as 'no limit'."""
+    if limit is None:
+        return list(items)
+    return list(items)[:limit]
+
+
 def _turns_from(transcript: Sequence[dict[str, Any]]) -> list[Turn]:
     return [Turn(question=t["question"], answer=t["answer"]) for t in transcript]
 
@@ -450,7 +458,7 @@ def run_dataset(
     model = models[spec.model_slot]
     model.callbacks = [budget]
     dataset = client.get_dataset(spec.dataset_name)
-    items = list(dataset.items)[:limit] if limit else dataset.items
+    items = apply_limit(dataset.items, limit)
 
     def task(*, item: Any, **_: Any) -> dict[str, Any]:
         return spec.run(item.input, model)

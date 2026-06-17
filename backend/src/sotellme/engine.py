@@ -303,7 +303,7 @@ class InterviewEngine:
                     "guardrail_redirects": envelope.consecutive_redirects,
                     "screened": "redirect",
                 }
-            return {"pending_answer": "", "screened": "terminate"}
+            return {"pending_answer": "", "redirect": "", "screened": "terminate"}
 
         def assess(state: InterviewState) -> InterviewState:
             topic = state.get("current_topic", "")
