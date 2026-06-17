@@ -27,7 +27,13 @@ from sotellme.config import (
     resolve_model_config,
 )
 from sotellme.director import DirectorError
-from sotellme.engine import EngineError, InterviewEngine, SessionSnapshot, TurnResult
+from sotellme.engine import (
+    EngineError,
+    InterviewEngine,
+    SessionListItem,
+    SessionSnapshot,
+    TurnResult,
+)
 from sotellme.grader import GradingError, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
@@ -45,6 +51,8 @@ TRACING_OFF_HINT = (
     "Tracing off — `pip install 'sotellme[tracing]'`, then set "
     "`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to enable."
 )
+
+HISTORY_HEIGHT = 300
 
 TURN_ERRORS = (AssessorError, DirectorError, GradingError, CoachingError, EngineError)
 
@@ -106,6 +114,39 @@ def state_after_answer(state: WebState, answer: str, result: TurnResult) -> WebS
         coach=result.coach,
         transcript=list(result.transcript) if result.finished else answered,
     )
+
+
+def resumable_state(snapshot: SessionSnapshot) -> WebState | None:
+    state = state_from_snapshot(snapshot)
+    if phase_of(state) == "report":
+        return None
+    return state
+
+
+def session_primary_line(item: SessionListItem) -> str:
+    if item.company and item.role_title:
+        return f"{item.company} — {item.role_title}"
+    return item.role_title or item.company or "Interview"
+
+
+def _format_session_date(created_at: str | None) -> str | None:
+    if not created_at:
+        return None
+    try:
+        return datetime.fromisoformat(created_at).strftime("%b %d")
+    except ValueError:
+        return None
+
+
+def session_secondary_line(item: SessionListItem) -> str:
+    parts = []
+    if item.target_level:
+        parts.append(item.target_level.capitalize())
+    date = _format_session_date(item.created_at)
+    if date:
+        parts.append(date)
+    parts.append("✅ done" if item.finished else "⏳ in progress")
+    return " · ".join(parts)
 
 
 def phase_of(state: WebState | None) -> Phase:
@@ -222,7 +263,7 @@ class _ModelProgress(BaseCallbackHandler):
             return
         self._step += 1
         try:
-            self._status.update(label=f"{self._label} ({self._step})")
+            self._status.update(label=f"{self._label} ({self._step})", expanded=True)
             step_label = agent_step_label(kwargs.get("tags"))
             if step_label is not None and step_label != self._last_written:
                 self._status.write(step_label)
@@ -245,7 +286,7 @@ def run() -> None:
         return
 
     state = _recover(catalog)
-    _render_sidebar(state)
+    _render_sidebar(catalog, state)
     if state is None:
         _render_setup(catalog)
         return
@@ -288,6 +329,11 @@ def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
 def _recover(catalog: Catalog) -> WebState | None:
     import streamlit as st
 
+    pending = st.session_state.pop("pending_thread", None)
+    if pending is not None:
+        opened = _open_session(catalog, pending)
+        if opened is not None:
+            return opened
     existing = st.session_state.get("state")
     if isinstance(existing, WebState):
         return existing
@@ -296,31 +342,104 @@ def _recover(catalog: Catalog) -> WebState | None:
     engine = _recovery_engine(catalog)
     if engine is None:
         return None
+    st.session_state.engine = engine
     try:
         snapshot = engine.snapshot_latest()
     except EngineError:
         return None
-    st.session_state.engine = engine
-    state = state_from_snapshot(snapshot)
-    st.session_state.state = state
+    state = resumable_state(snapshot)
+    if state is not None:
+        st.session_state.state = state
     return state
 
 
-def _render_sidebar(state: WebState | None) -> None:
+def _listing_engine(catalog: Catalog) -> InterviewEngine | None:
+    import streamlit as st
+
+    engine = st.session_state.get("engine")
+    if isinstance(engine, InterviewEngine):
+        return engine
+    engine = _recovery_engine(catalog)
+    if engine is not None:
+        st.session_state.engine = engine
+    return engine
+
+
+def _start_new_interview() -> None:
+    import streamlit as st
+
+    for key in ("state", "report_path"):
+        st.session_state.pop(key, None)
+    st.session_state.new_interview = True
+    st.rerun()
+
+
+def _request_open(thread_id: str) -> None:
+    import streamlit as st
+
+    st.session_state.pending_thread = thread_id
+
+
+def _open_session(catalog: Catalog, thread_id: str) -> WebState | None:
+    import streamlit as st
+
+    engine = _listing_engine(catalog)
+    if engine is None:
+        return None
+    try:
+        snapshot = engine.snapshot(thread_id)
+    except EngineError as exc:
+        st.warning(str(exc))
+        return None
+    st.session_state.engine = engine
+    state = state_from_snapshot(snapshot)
+    st.session_state.state = state
+    st.session_state.pop("report_path", None)
+    st.session_state.pop("new_interview", None)
+    return state
+
+
+def _render_sidebar(catalog: Catalog, state: WebState | None) -> None:
     import streamlit as st
 
     with st.sidebar:
-        st.subheader("Menu")
-        if state is not None:
-            if st.button("New interview", use_container_width=True):
-                for key in ("state", "engine", "report_path"):
-                    st.session_state.pop(key, None)
-                st.session_state.new_interview = True
-                st.rerun()
-        else:
-            st.caption("Start an interview to see options here.")
+        if state is not None and st.button("New interview", use_container_width=True):
+            _start_new_interview()
         if not langfuse_configured(os.environ):
             st.caption(TRACING_OFF_HINT)
+        _render_history(catalog, state)
+
+
+def _invalidate_history() -> None:
+    import streamlit as st
+
+    st.session_state.pop("history_items", None)
+
+
+def _render_history(catalog: Catalog, state: WebState | None) -> None:
+    import streamlit as st
+
+    engine = _listing_engine(catalog)
+    if engine is None:
+        return
+    if "history_items" not in st.session_state:
+        st.session_state.history_items = engine.list_sessions()
+    sessions = st.session_state.history_items
+    if not sessions:
+        return
+    selected = state.thread_id if state is not None else None
+    st.subheader("Past interviews")
+    with st.container(height=HISTORY_HEIGHT):
+        for item in sessions:
+            label = f"**{session_primary_line(item)}**  \n{session_secondary_line(item)}"
+            st.button(
+                label,
+                key=f"history_{item.thread_id}",
+                use_container_width=True,
+                on_click=_request_open,
+                args=(item.thread_id,),
+                type="primary" if item.thread_id == selected else "secondary",
+            )
 
 
 def _render_setup(catalog: Catalog) -> None:
@@ -389,13 +508,14 @@ def _render_setup(catalog: Catalog) -> None:
     engine = build_engine(config, [*_tracing_callbacks(), progress])
     st.session_state.progress = progress
     cv_path = save_upload(cv_file.name, cv_file.getvalue(), _upload_dir())
-    with st.status("Reading your CV and researching the role…") as status:
+    with st.status("Reading your CV and researching the role…", expanded=True) as status:
         progress.aim(status, "Reading your CV and researching the role")
         snapshot = engine.start(cv_path, posting_text=resolved_posting)
         progress.clear()
     st.session_state.engine = engine
     st.session_state.state = state_from_snapshot(snapshot)
     st.session_state.pop("new_interview", None)
+    _invalidate_history()
     st.rerun()
 
 
@@ -405,7 +525,7 @@ def _render_level(engine: InterviewEngine, state: WebState) -> None:
     st.info("This posting doesn't state a level. What level is this interview for?")
     level = st.selectbox("Target level", TARGET_LEVELS, format_func=str.capitalize)
     if st.button("Continue", type="primary"):
-        with st.status("Setting up the interview…") as status:
+        with st.status("Setting up the interview…", expanded=True) as status:
             _aim_progress(status, "Setting up the interview")
             snapshot = engine.submit_level(state.thread_id, level)
         st.session_state.state = state_from_snapshot(snapshot)
@@ -429,7 +549,7 @@ def _render_interview(engine: InterviewEngine, state: WebState) -> None:
     answer = st.chat_input("Your answer")
     if answer:
         st.chat_message("user").write(answer)
-        with st.status("Thinking…") as status:
+        with st.status("Thinking…", expanded=True) as status:
             _aim_progress(status, "Thinking")
             try:
                 result = engine.submit_answer(state.thread_id, answer)
@@ -438,6 +558,8 @@ def _render_interview(engine: InterviewEngine, state: WebState) -> None:
                 st.error(str(exc))
                 return
         st.session_state.state = state_after_answer(state, answer, result)
+        if result.finished:
+            _invalidate_history()
         st.rerun()
 
 
@@ -456,7 +578,7 @@ def _render_test_autopilot(engine: InterviewEngine, state: WebState) -> None:
     if not st.button("⏩ Finish with test answers", help="Test mode: auto-answer to the end."):
         return
     current = state
-    with st.status("Auto-answering to the end…") as status:
+    with st.status("Auto-answering to the end…", expanded=True) as status:
         _aim_progress(status, "Auto-answering")
         while phase_of(current) == "interview":
             try:
@@ -468,6 +590,7 @@ def _render_test_autopilot(engine: InterviewEngine, state: WebState) -> None:
                 return
             current = state_after_answer(current, answer, result)
     st.session_state.state = current
+    _invalidate_history()
     st.rerun()
 
 

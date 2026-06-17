@@ -138,6 +138,15 @@ class SessionSnapshot(BaseModel):
     coach: CoachReport | None = None
 
 
+class SessionListItem(BaseModel):
+    thread_id: str
+    company: str | None = None
+    role_title: str | None = None
+    target_level: TargetLevel | None = None
+    finished: bool = False
+    created_at: str | None = None
+
+
 class TurnResult(BaseModel):
     next_question: str | None = None
     closing: str | None = None
@@ -362,7 +371,9 @@ class InterviewEngine:
         graph.add_edge("grade", "coach")
         graph.add_edge("coach", END)
         serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED_TYPES)
-        self._graph = graph.compile(checkpointer=SqliteSaver(self._conn, serde=serde))
+        checkpointer = SqliteSaver(self._conn, serde=serde)
+        checkpointer.setup()
+        self._graph = graph.compile(checkpointer=checkpointer)
 
     def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
         thread_id = uuid.uuid4().hex
@@ -378,6 +389,29 @@ class InterviewEngine:
 
     def snapshot_latest(self) -> SessionSnapshot:
         return self._snapshot(self._latest_thread())
+
+    def snapshot(self, thread_id: str) -> SessionSnapshot:
+        return self._snapshot(thread_id)
+
+    def list_sessions(self, limit: int | None = None, offset: int = 0) -> list[SessionListItem]:
+        rows = self._conn.execute(
+            "SELECT thread_id FROM checkpoints "
+            "GROUP BY thread_id ORDER BY MAX(checkpoint_id) DESC LIMIT ? OFFSET ?",
+            (-1 if limit is None else limit, offset),
+        ).fetchall()
+        return [self._session_item(thread_id) for (thread_id,) in rows]
+
+    def _session_item(self, thread_id: str) -> SessionListItem:
+        state = self._graph.get_state(self._config(thread_id))
+        role_context = state.values.get("role_context")
+        return SessionListItem(
+            thread_id=thread_id,
+            company=role_context.company if role_context is not None else None,
+            role_title=role_context.role_title if role_context is not None else None,
+            target_level=role_context.target_level if role_context is not None else None,
+            finished=not state.next,
+            created_at=state.created_at,
+        )
 
     def _latest_thread(self) -> str:
         latest = self._data_dir / "latest"
@@ -442,6 +476,8 @@ class InterviewEngine:
     def _snapshot(self, thread_id: str) -> SessionSnapshot:
         state = self._graph.get_state(self._config(thread_id))
         values = state.values
+        if "profile" not in values:
+            raise EngineError("This interview didn't get far enough to reopen.")
         needs_level = "ask_level" in state.next
         finished = not state.next
         role_context = values.get("role_context")

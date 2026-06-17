@@ -14,6 +14,7 @@ from sotellme.engine import (
     Guardrail,
     InterviewEngine,
     RoleBuilder,
+    SessionListItem,
     SessionSnapshot,
 )
 from sotellme.grader import AnswerScore, SessionGrade
@@ -731,6 +732,150 @@ def test_snapshot_latest_recovers_a_finished_session(tmp_path: Path) -> None:
     assert snapshot.closing is not None
     assert snapshot.grade is not None
     assert snapshot.coach is not None
+
+
+def test_list_sessions_returns_threads_newest_first(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    with build_engine(data_dir, director=ScriptedDirector([OPENING_DECISION])) as engine:
+        first = start_past_setup(engine, write_cv(tmp_path))
+        second = start_past_setup(engine, write_cv(tmp_path))
+
+        sessions = engine.list_sessions()
+
+    assert [item.thread_id for item in sessions] == [second.thread_id, first.thread_id]
+    assert all(isinstance(item, SessionListItem) for item in sessions)
+
+
+def test_list_sessions_returns_every_thread_by_default(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    with build_engine(data_dir, director=ScriptedDirector([OPENING_DECISION])) as engine:
+        for _ in range(11):
+            start_past_setup(engine, write_cv(tmp_path))
+
+        sessions = engine.list_sessions()
+
+    assert len(sessions) == 11
+
+
+def test_list_sessions_paginates_with_limit_and_offset(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    with build_engine(data_dir, director=ScriptedDirector([OPENING_DECISION])) as engine:
+        oldest = start_past_setup(engine, write_cv(tmp_path))
+        middle = start_past_setup(engine, write_cv(tmp_path))
+        newest = start_past_setup(engine, write_cv(tmp_path))
+
+        first_page = engine.list_sessions(limit=2, offset=0)
+        second_page = engine.list_sessions(limit=2, offset=2)
+
+    assert [item.thread_id for item in first_page] == [newest.thread_id, middle.thread_id]
+    assert [item.thread_id for item in second_page] == [oldest.thread_id]
+
+
+def test_list_sessions_carries_the_role_label_level_and_finished_state(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    builder = builder_returning(acme_context(target_level="senior"))
+    with build_engine(data_dir, role_builder=builder) as engine:
+        session = engine.start(write_cv(tmp_path), posting_text=POSTING)
+        engine.submit_answer(session.thread_id, "A strong, complete story.")
+
+        item = engine.list_sessions()[0]
+
+    assert item.thread_id == session.thread_id
+    assert item.company == "Acme"
+    assert item.role_title == "Senior Backend Engineer"
+    assert item.target_level == "senior"
+    assert item.finished is True
+
+
+def test_list_sessions_marks_an_unfinished_session_as_in_progress(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    builder = builder_returning(acme_context(target_level="senior"))
+    with build_engine(
+        data_dir, director=ScriptedDirector([OPENING_DECISION]), role_builder=builder
+    ) as engine:
+        engine.start(write_cv(tmp_path), posting_text=POSTING)
+
+        item = engine.list_sessions()[0]
+
+    assert item.finished is False
+    assert item.created_at is not None
+
+
+def test_list_sessions_falls_back_gracefully_for_an_early_stage_thread(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    with build_engine(data_dir) as engine:
+        engine.start(write_cv(tmp_path))
+
+        item = engine.list_sessions()[0]
+
+    assert item.role_title is None
+    assert item.company is None
+    assert item.target_level is None
+    assert item.finished is False
+
+
+def test_list_sessions_on_a_fresh_database_is_empty(tmp_path: Path) -> None:
+    with build_engine(tmp_path / "data") as engine:
+        assert engine.list_sessions() == []
+
+
+def test_list_sessions_labels_a_thread_that_never_built_a_role_context(tmp_path: Path) -> None:
+    def exploding_builder(posting_text: str) -> RoleContext:
+        raise RuntimeError("boom")
+
+    with build_engine(tmp_path / "data", role_builder=exploding_builder) as engine:
+        with pytest.raises(RuntimeError):
+            engine.start(write_cv(tmp_path), posting_text=POSTING)
+
+        item = engine.list_sessions()[0]
+
+    assert item.role_title is None
+    assert item.company is None
+    assert item.target_level is None
+    assert item.finished is False
+
+
+def _engine_with_failing_parser(data_dir: Path) -> InterviewEngine:
+    def failing_parser(cv_text: str) -> CandidateProfile:
+        raise RuntimeError("unreadable CV")
+
+    return InterviewEngine(
+        data_dir=data_dir,
+        profile_parser=failing_parser,
+        assessor=keyword_assessor,
+        director=ScriptedDirector([OPENING_DECISION]),
+        interviewer=StubInterviewer(),
+        role_builder=builder_returning(acme_context()),
+        researcher=stub_researcher,
+        grader=RecordingGrader(),
+        coacher=RecordingCoacher(),
+        guardrail=ScriptedGuardrail(),
+    )
+
+
+def test_list_sessions_lists_a_thread_that_failed_before_a_profile_with_fallbacks(
+    tmp_path: Path,
+) -> None:
+    with _engine_with_failing_parser(tmp_path / "data") as engine:
+        with pytest.raises(RuntimeError):
+            engine.start(write_cv(tmp_path))
+
+        item = engine.list_sessions()[0]
+
+    assert item.role_title is None
+    assert item.company is None
+    assert item.target_level is None
+    assert item.finished is False
+
+
+def test_snapshot_of_a_thread_with_no_profile_is_a_clear_error(tmp_path: Path) -> None:
+    with _engine_with_failing_parser(tmp_path / "data") as engine:
+        with pytest.raises(RuntimeError):
+            engine.start(write_cv(tmp_path))
+
+        thread_id = engine.list_sessions()[0].thread_id
+        with pytest.raises(EngineError, match="reopen"):
+            engine.snapshot(thread_id)
 
 
 def test_an_off_topic_turn_is_redirected_and_kept_out_of_the_transcript(tmp_path: Path) -> None:

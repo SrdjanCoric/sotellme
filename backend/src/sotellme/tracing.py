@@ -18,8 +18,10 @@ def langfuse_callbacks(env: Mapping[str, str]) -> list[BaseCallbackHandler]:
     if find_spec("langfuse") is None:
         raise TracingError(
             "Langfuse tracing is on (LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY are set), "
-            "but the langfuse package isn't installed. Install the tracing extra "
-            "(sotellme[tracing]), or unset those variables to run without tracing."
+            "but the langfuse client isn't installed in this environment. Relaunch with the "
+            'tracing extra included — uvx --from "sotellme[web,tracing]" sotellme web — and set '
+            "LANGFUSE_HOST to point at your local or Docker Langfuse. To run without tracing, "
+            "unset those variables."
         )
     from langfuse.langchain import CallbackHandler
 
