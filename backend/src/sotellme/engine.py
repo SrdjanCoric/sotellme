@@ -443,6 +443,31 @@ class InterviewEngine:
             transcript=state.values.get("transcript", []),
         )
 
+    def replay_from(self, thread_id: str, node: str = "grade") -> TurnResult:
+        fork = next(
+            (
+                snapshot
+                for snapshot in self._graph.get_state_history(self._config(thread_id))
+                if node in snapshot.next
+            ),
+            None,
+        )
+        if fork is None:
+            raise EngineError(f"Session {thread_id!r} has no checkpoint before {node!r} to replay.")
+        fork_config: RunnableConfig = {
+            "configurable": dict(fork.config["configurable"]),
+            "callbacks": self._callbacks,
+        }
+        self._graph.invoke(None, fork_config)
+        state = self._graph.get_state(self._config(thread_id))
+        return TurnResult(
+            next_question=None,
+            closing=state.values.get("closing"),
+            grade=state.values.get("grade"),
+            coach=state.values.get("coach"),
+            transcript=state.values.get("transcript", []),
+        )
+
     @property
     def budget_callback(self) -> BudgetCallback:
         return self._budget_callback

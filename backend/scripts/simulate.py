@@ -5,9 +5,11 @@ and a provider key for the `run` command. Not a published command; run it from t
 
     uv run python scripts/simulate.py upload
     uv run python scripts/simulate.py run --persona senior-strong --persona junior-thin
+    uv run python scripts/simulate.py replay --persona senior-strong
 
 Before a run it prints an estimated cost and asks for confirmation above the gate ($3.50); pass
---yes to skip the prompt in scripted runs.
+--yes to skip the prompt in scripted runs. `replay` re-grades and re-coaches stored sessions with
+the current code via LangGraph time travel — no interviews are re-run, so it is near-free.
 """
 
 from __future__ import annotations
@@ -25,8 +27,13 @@ from sotellme.sim_datasets import (
     run_simulation_experiment,
     upload_persona_dataset,
 )
-from sotellme.simulation import confirm_run, estimate_run_cost, format_run_cost
-from sotellme.tracing import TracingError
+from sotellme.simulation import (
+    confirm_run,
+    estimate_run_cost,
+    format_run_cost,
+    replay_sessions,
+)
+from sotellme.tracing import TracingError, langfuse_callbacks
 
 BACKEND = Path(__file__).resolve().parent.parent
 PERSONAS_DIR = BACKEND / "evals" / "personas"
@@ -103,6 +110,32 @@ def _run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _replay(args: argparse.Namespace) -> int:
+    from sotellme.cli import build_engine
+
+    personas = _selected_personas(args.persona)
+    config = resolve_model_config(
+        env=os.environ,
+        provider=args.provider,
+        fast_model=args.fast_model,
+        smart_model=args.smart_model,
+    )
+    prices = load_catalog(_data_dir()).prices
+    artifacts_dir = BACKEND / "evals" / "sessions"
+
+    if args.run_name:
+        print(f"Replay: {args.run_name}")
+    engine = build_engine(
+        config, langfuse_callbacks(os.environ), data_dir=_data_dir() / "sim-checkpoints"
+    )
+    try:
+        print(replay_sessions(engine, personas, artifacts_dir, prices, stage=args.stage))
+    finally:
+        engine.close()
+    print(f"Session artifacts refreshed under {artifacts_dir}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="simulate", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -121,10 +154,29 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--yes", action="store_true", help="Skip the cost-confirmation prompt.")
     _add_model_flags(run)
 
+    replay = commands.add_parser(
+        "replay",
+        help="Re-grade and re-coach stored sessions via time travel; no interviews re-run.",
+    )
+    replay.add_argument(
+        "--persona", action="append", help="Replay only this persona (repeatable); default all."
+    )
+    replay.add_argument(
+        "--from",
+        dest="stage",
+        choices=["grade", "coach"],
+        default="grade",
+        help="Fork point: 'grade' re-runs grade and coach; 'coach' re-runs only coach.",
+    )
+    replay.add_argument("--run-name", help="Label this replay in the printed output.")
+    _add_model_flags(replay)
+
     args = parser.parse_args(argv)
     try:
         if args.command == "upload":
             return _upload(args)
+        if args.command == "replay":
+            return _replay(args)
         return _run(args)
     except (TracingError, ModelConfigError, CatalogError) as error:
         print(f"error: {error}", file=sys.stderr)

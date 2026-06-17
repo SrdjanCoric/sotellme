@@ -139,6 +139,33 @@ def stub_researcher(posting_text: str, context: RoleContext) -> str:
     return BRIEF
 
 
+class CountingParser:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, cv_text: str) -> CandidateProfile:
+        self.calls += 1
+        return STUB_PROFILE
+
+
+class CountingResearcher:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, posting_text: str, context: RoleContext) -> str:
+        self.calls += 1
+        return BRIEF
+
+
+class CountingAssessor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, topic: str, transcript: Sequence[Turn]) -> AnswerAssessment:
+        self.calls += 1
+        return keyword_assessor(topic, transcript)
+
+
 GRADE = SessionGrade(
     scores=[
         AnswerScore(
@@ -202,14 +229,16 @@ def build_engine(
     grader: object = None,
     coacher: object = None,
     guardrail: Guardrail | None = None,
+    profile_parser: object = None,
+    assessor: object = None,
     question_cap: int = 20,
     follow_up_cap: int = 6,
     token_budget: int = DEFAULT_TOKEN_BUDGET,
 ) -> InterviewEngine:
     return InterviewEngine(
         data_dir=data_dir,
-        profile_parser=stub_parser,
-        assessor=keyword_assessor,
+        profile_parser=profile_parser or stub_parser,  # type: ignore[arg-type]
+        assessor=assessor or keyword_assessor,  # type: ignore[arg-type]
         director=director or ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION]),
         interviewer=interviewer or StubInterviewer(),
         role_builder=role_builder or builder_returning(acme_context()),
@@ -302,6 +331,91 @@ def test_a_wrap_up_decision_ends_the_session_with_the_closing_turn(tmp_path: Pat
 
     assert result.finished
     assert result.closing == CLOSING_TURN
+
+
+def test_replay_from_grade_reruns_grade_and_coach_without_re_running_upstream(
+    tmp_path: Path,
+) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    interviewer = StubInterviewer()
+    parser = CountingParser()
+    researcher = CountingResearcher()
+    assessor = CountingAssessor()
+    grader = RecordingGrader()
+    coacher = RecordingCoacher()
+    with build_engine(
+        tmp_path / "data",
+        director=director,
+        interviewer=interviewer,
+        profile_parser=parser,
+        researcher=researcher,
+        assessor=assessor,
+        grader=grader,
+        coacher=coacher,
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        original = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        assert original.finished
+
+        upstream_before = (
+            parser.calls,
+            researcher.calls,
+            assessor.calls,
+            len(director.situations),
+            len(interviewer.seen_decisions),
+        )
+
+        replayed = engine.replay_from(session.thread_id, "grade")
+
+    assert replayed.finished
+    assert replayed.grade == GRADE
+    assert replayed.coach == COACH_REPORT
+    assert replayed.transcript == original.transcript
+
+    assert len(grader.seen) == 2
+    assert len(coacher.seen) == 2
+    upstream_after = (
+        parser.calls,
+        researcher.calls,
+        assessor.calls,
+        len(director.situations),
+        len(interviewer.seen_decisions),
+    )
+    assert upstream_after == upstream_before
+
+    replay_transcript, replay_level = grader.seen[1]
+    assert [turn.answer for turn in replay_transcript] == ["A strong, complete story."]
+    assert replay_level == "mid"
+
+
+def test_replay_from_coach_reruns_only_coach_and_reuses_the_grade(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    grader = RecordingGrader()
+    coacher = RecordingCoacher()
+    with build_engine(
+        tmp_path / "data", director=director, grader=grader, coacher=coacher
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "A strong, complete story.")
+        grades_before = len(grader.seen)
+
+        replayed = engine.replay_from(session.thread_id, "coach")
+
+    assert replayed.grade == GRADE
+    assert replayed.coach == COACH_REPORT
+    assert len(coacher.seen) == 2
+    assert len(grader.seen) == grades_before
+
+
+def test_replay_from_skips_a_session_with_no_checkpoint_for_the_node(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        ongoing = engine.submit_answer(session.thread_id, "A partial story.")
+        assert not ongoing.finished
+
+        with pytest.raises(EngineError, match="no checkpoint before 'grade'"):
+            engine.replay_from(session.thread_id, "grade")
 
 
 def test_a_finished_session_carries_the_grade_over_the_real_transcript(tmp_path: Path) -> None:
