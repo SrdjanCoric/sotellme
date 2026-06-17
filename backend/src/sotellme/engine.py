@@ -453,9 +453,7 @@ class InterviewEngine:
             None,
         )
         if fork is None:
-            raise EngineError(
-                f"Session {thread_id!r} has no checkpoint before {node!r} to replay."
-            )
+            raise EngineError(f"Session {thread_id!r} has no checkpoint before {node!r} to replay.")
         fork_config: RunnableConfig = {
             "configurable": dict(fork.config["configurable"]),
             "callbacks": self._callbacks,
