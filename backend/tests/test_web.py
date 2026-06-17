@@ -258,7 +258,7 @@ def _fake_streamlit(shown: list[str]) -> types.SimpleNamespace:
     def stop() -> None:
         raise _StopRun()
 
-    return types.SimpleNamespace(error=shown.append, stop=stop)
+    return types.SimpleNamespace(error=shown.append, warning=shown.append, stop=stop)
 
 
 def test_tracing_callbacks_are_empty_when_langfuse_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -269,7 +269,7 @@ def test_tracing_callbacks_are_empty_when_langfuse_is_off(monkeypatch: pytest.Mo
     assert _tracing_callbacks() == []
 
 
-def test_tracing_on_without_the_package_shows_a_message_and_stops(
+def test_tracing_on_without_the_package_warns_and_continues(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     shown: list[str] = []
@@ -278,7 +278,5 @@ def test_tracing_on_without_the_package_shows_a_message_and_stops(
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
     monkeypatch.setattr(sotellme.tracing, "find_spec", lambda name: None)
 
-    with pytest.raises(_StopRun):
-        _tracing_callbacks()
-
+    assert _tracing_callbacks() == []
     assert shown and "sotellme[tracing]" in shown[0]

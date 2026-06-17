@@ -46,5 +46,8 @@ backend/evals/sessions/
 # Feature-review scaffolding (ephemeral, branch-scoped)
 reviews/
 
+# Handoff docs (ephemeral, branch-scoped)
+handoffs/
+
 # OS / editor
 .DS_Store

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 import sotellme.cli as cli
+import sotellme.tracing
 from sotellme.assessor import StarFlags
 from sotellme.cli import (
     NO_REPORTS_MESSAGE,
@@ -164,6 +165,17 @@ def test_build_engine_wires_every_agent_from_its_own_role(
     build_engine(config, [])
 
     assert set(requested) == set(AGENT_ROLES)
+
+
+def test_tracing_on_without_the_package_warns_and_continues(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk")
+    monkeypatch.setattr(sotellme.tracing, "find_spec", lambda name: None)
+
+    assert cli._tracing_callbacks() == []
+    assert "sotellme[tracing]" in capsys.readouterr().err
 
 
 def test_format_report_list_names_each_report() -> None:

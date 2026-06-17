@@ -467,6 +467,14 @@ def _run_reports(console: Console) -> None:
     console.print(format_report_list(list_reports(Path.cwd())))
 
 
+def _tracing_callbacks() -> list[BaseCallbackHandler]:
+    try:
+        return langfuse_callbacks(os.environ)
+    except TracingError as exc:
+        Console(stderr=True).print(str(exc), style="yellow", markup=False)
+        return []
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     console = Console()
@@ -493,7 +501,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "interview":
             estimate = estimate_session_cost(config.smart_model, TYPICAL_TURNS, catalog.prices)
             console.print(f"[dim]{format_cost_estimate(estimate)}[/dim]")
-        callbacks = langfuse_callbacks(os.environ)
+        callbacks = _tracing_callbacks()
         engine = build_engine(config, callbacks)
         with engine:
             if args.command == "interview":
@@ -520,7 +528,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         CoachingError,
         TranscriptInputError,
         EngineError,
-        TracingError,
     ) as exc:
         console.print(f"[red]{exc}[/red]")
         return 1

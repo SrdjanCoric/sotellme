@@ -34,12 +34,17 @@ from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import CandidateProfile
 from sotellme.report import render_report, write_report
 from sotellme.role import TargetLevel
-from sotellme.tracing import TracingError, langfuse_callbacks
+from sotellme.tracing import TracingError, langfuse_callbacks, langfuse_configured
 
 DEFAULT_CHOICE = "— provider default —"
 
 LINK_MODE = "Link"
 TEXT_MODE = "Paste text"
+
+TRACING_OFF_HINT = (
+    "Tracing off — `pip install 'sotellme[tracing]'`, then set "
+    "`LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to enable."
+)
 
 TURN_ERRORS = (AssessorError, DirectorError, GradingError, CoachingError, EngineError)
 
@@ -265,9 +270,8 @@ def _tracing_callbacks() -> list[BaseCallbackHandler]:
     try:
         return langfuse_callbacks(os.environ)
     except TracingError as exc:
-        st.error(str(exc))
-        st.stop()
-        raise  # unreachable: st.stop() halts the run
+        st.warning(str(exc))
+        return []
 
 
 def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
@@ -315,6 +319,8 @@ def _render_sidebar(state: WebState | None) -> None:
                 st.rerun()
         else:
             st.caption("Start an interview to see options here.")
+        if not langfuse_configured(os.environ):
+            st.caption(TRACING_OFF_HINT)
 
 
 def _render_setup(catalog: Catalog) -> None:
