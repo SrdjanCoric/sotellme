@@ -8,7 +8,7 @@ import sotellme.tracing
 from sotellme.catalog import default_catalog
 from sotellme.coach import CoachReport
 from sotellme.config import AGENT_TAG_PREFIX, AgentModel
-from sotellme.engine import SessionSnapshot, TurnResult
+from sotellme.engine import SessionListItem, SessionSnapshot, TurnResult
 from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
@@ -17,6 +17,7 @@ from sotellme.web import (
     LINK_MODE,
     TEXT_MODE,
     WebState,
+    _ModelProgress,
     _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
@@ -26,7 +27,10 @@ from sotellme.web import (
     model_choices,
     phase_of,
     posting_to_resolve,
+    resumable_state,
     save_upload,
+    session_primary_line,
+    session_secondary_line,
     state_after_answer,
     state_from_snapshot,
 )
@@ -108,6 +112,74 @@ def test_a_finished_snapshot_recovers_the_report_phase() -> None:
     assert state.coach is coach
 
 
+def test_a_finished_snapshot_does_not_auto_resume() -> None:
+    grade = SessionGrade(scores=[])
+    coach = CoachReport(summary="Tighten the result.", answer_advice=[], drills=[], study_plan="")
+    snapshot = SessionSnapshot(
+        thread_id="t1",
+        question=None,
+        needs_level=False,
+        profile=profile(),
+        finished=True,
+        closing="Thanks.",
+        grade=grade,
+        coach=coach,
+    )
+
+    assert resumable_state(snapshot) is None
+
+
+def test_an_unfinished_snapshot_is_resumed() -> None:
+    snapshot = SessionSnapshot(
+        thread_id="t1", question="Tell me about a project.", needs_level=False, profile=profile()
+    )
+
+    state = resumable_state(snapshot)
+
+    assert state is not None
+    assert phase_of(state) == "interview"
+    assert state.question == "Tell me about a project."
+
+
+def test_session_primary_line_joins_company_and_role() -> None:
+    item = SessionListItem(thread_id="t1", company="Acme", role_title="Senior Backend Engineer")
+
+    assert session_primary_line(item) == "Acme — Senior Backend Engineer"
+
+
+def test_session_primary_line_falls_back_to_role_then_generic() -> None:
+    role_only = SessionListItem(thread_id="t1", role_title="Backend Engineer")
+    bare = SessionListItem(thread_id="t2")
+
+    assert session_primary_line(role_only) == "Backend Engineer"
+    assert session_primary_line(bare) == "Interview"
+
+
+def test_session_secondary_line_shows_level_date_and_done_badge() -> None:
+    item = SessionListItem(
+        thread_id="t1",
+        target_level="senior",
+        finished=True,
+        created_at="2026-06-17T09:30:00+00:00",
+    )
+
+    assert session_secondary_line(item) == "Senior · Jun 17 · ✅ done"
+
+
+def test_session_secondary_line_marks_in_progress_and_drops_a_missing_level() -> None:
+    item = SessionListItem(thread_id="t1", finished=False, created_at="2026-06-17T09:30:00+00:00")
+
+    assert session_secondary_line(item) == "Jun 17 · ⏳ in progress"
+
+
+def test_session_secondary_line_drops_an_unparseable_date() -> None:
+    item = SessionListItem(
+        thread_id="t1", target_level="mid", finished=True, created_at="not-a-date"
+    )
+
+    assert session_secondary_line(item) == "Mid · ✅ done"
+
+
 def interviewing(question: str) -> WebState:
     return state_from_snapshot(
         SessionSnapshot(thread_id="t1", question=question, needs_level=False, profile=profile())
@@ -175,6 +247,30 @@ def test_chat_messages_end_on_the_closing_line_when_finished() -> None:
         ("user", "I led the migration."),
         ("assistant", "Thanks for that."),
     ]
+
+
+class _FakeStatus:
+    def __init__(self) -> None:
+        self.updates: list[dict[str, object]] = []
+        self.writes: list[str] = []
+
+    def update(self, **kwargs: object) -> None:
+        self.updates.append(kwargs)
+
+    def write(self, line: str) -> None:
+        self.writes.append(line)
+
+
+def test_progress_keeps_the_status_expanded_on_each_new_stage() -> None:
+    progress = _ModelProgress()
+    status = _FakeStatus()
+    progress.aim(status, "Reading your CV")
+
+    progress.on_chat_model_start(tags=[f"{AGENT_TAG_PREFIX}parser"])
+    progress.on_chat_model_start(tags=[f"{AGENT_TAG_PREFIX}grader"])
+
+    assert all(update.get("expanded") is True for update in status.updates)
+    assert len(status.updates) == 2
 
 
 def test_agent_step_label_maps_a_tagged_agent_to_a_friendly_line() -> None:
@@ -279,4 +375,4 @@ def test_tracing_on_without_the_package_warns_and_continues(
     monkeypatch.setattr(sotellme.tracing, "find_spec", lambda name: None)
 
     assert _tracing_callbacks() == []
-    assert shown and "sotellme[tracing]" in shown[0]
+    assert shown and "sotellme[web,tracing]" in shown[0]

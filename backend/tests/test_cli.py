@@ -175,7 +175,7 @@ def test_tracing_on_without_the_package_warns_and_continues(
     monkeypatch.setattr(sotellme.tracing, "find_spec", lambda name: None)
 
     assert cli._tracing_callbacks() == []
-    assert "sotellme[tracing]" in capsys.readouterr().err
+    assert "sotellme[web,tracing]" in capsys.readouterr().err
 
 
 def test_format_report_list_names_each_report() -> None:

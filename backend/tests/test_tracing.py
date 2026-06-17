@@ -33,5 +33,6 @@ def test_configured_but_uninstalled_langfuse_is_a_clear_error(
         langfuse_callbacks(env={"LANGFUSE_PUBLIC_KEY": "pk", "LANGFUSE_SECRET_KEY": "sk"})
 
     message = str(exc_info.value)
-    assert "sotellme[tracing]" in message
+    assert 'uvx --from "sotellme[web,tracing]" sotellme web' in message
+    assert "LANGFUSE_HOST" in message
     assert "without tracing" in message

@@ -156,6 +156,17 @@ you can size a full run from a `--limit` sample before committing to it. Only th
 synthetic `evals/*.json` cases ever go in, and Langfuse stays off unless its env vars are
 set, for evals and for live-session tracing alike.
 
+To trace a live web session you need both extras: the browser app ships in `web`, the
+Langfuse client in `tracing`. Export `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, and
+`LANGFUSE_HOST`, then launch with both:
+
+```sh
+uvx --from "sotellme[web,tracing]" sotellme web
+```
+
+Every agent step in that session lands as a trace. Leave the variables unset and the app
+never reaches for Langfuse.
+
 The questions the system asks get their own eval. `scripts/simulate.py` runs a full
 interview against a synthetic candidate: the real interviewer and director loop ask, while
 a candidate-simulator answers in character from a persona under `evals/personas/`. The
