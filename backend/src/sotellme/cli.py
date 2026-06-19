@@ -1,3 +1,5 @@
+"""Command-line interface for the sotellme behavioral interview simulator and coach."""
+
 import argparse
 import importlib.util
 import json
@@ -70,6 +72,7 @@ _STAR_LABELS = {
 
 
 def _truncate_question(question: str, limit: int = 80) -> str:
+    """Collapse whitespace in a question and truncate it with an ellipsis past the limit"""
     collapsed = " ".join(question.split())
     if len(collapsed) <= limit:
         return collapsed
@@ -77,6 +80,7 @@ def _truncate_question(question: str, limit: int = 80) -> str:
 
 
 def format_score_summary(grade: SessionGrade) -> str:
+    """Render a session grade into a human-readable, multi-line scorecard string."""
     if not grade.scores:
         return NO_SCORES_MESSAGE
     blocks: list[str] = []
@@ -96,12 +100,14 @@ def format_score_summary(grade: SessionGrade) -> str:
 
 
 def format_report_list(reports: Sequence[Path]) -> str:
+    """Render report paths as a newline-separated list of their file names."""
     if not reports:
         return NO_REPORTS_MESSAGE
     return "\n".join(report.name for report in reports)
 
 
 def format_cost_estimate(estimate: CostEstimate) -> str:
+    """Render a cost estimate into a short pre-interview message."""
     if estimate.usd is None:
         return (
             f"No price configured for {estimate.model}, "
@@ -125,6 +131,7 @@ RICH_ANSWER_HINT = (
 
 
 def parse_target_level(raw: str) -> TargetLevel | None:
+    """Parse raw user input into a recognized target level."""
     cleaned = raw.strip().lower()
     if cleaned in TARGET_LEVELS:
         return cleaned
@@ -132,6 +139,7 @@ def parse_target_level(raw: str) -> TargetLevel | None:
 
 
 def ask_target_level(read_line: Callable[[], str], show: Callable[[str], None]) -> TargetLevel:
+    """Prompt for a target level, re-prompting until a valid one is entered."""
     show(LEVEL_PROMPT)
     while True:
         level = parse_target_level(read_line())
@@ -144,6 +152,7 @@ DONE_SENTINEL = "/done"
 
 
 def strip_done_sentinel(text: str) -> str:
+    """Remove a trailing /done sentinel line and surrounding blank lines from text."""
     lines = text.split("\n")
     while lines and not lines[-1].strip():
         lines.pop()
@@ -155,10 +164,13 @@ def strip_done_sentinel(text: str) -> str:
 
 
 class TranscriptInputError(Exception):
+    """Raised when a transcript file is missing, unreadable, or not in the expected format."""
+
     pass
 
 
 def parse_transcript(text: str) -> list[Turn]:
+    """Parse transcript JSON text into a list of interview turns."""
     try:
         document = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -186,6 +198,7 @@ def parse_transcript(text: str) -> list[Turn]:
 
 
 def read_multiline_answer(read_line: Callable[[], str]) -> str:
+    """Read lines until a blank line, the done sentinel, or end of input."""
     lines: list[str] = []
     while True:
         try:
@@ -199,10 +212,12 @@ def read_multiline_answer(read_line: Callable[[], str]) -> str:
 
 
 def _interactive() -> bool:
+    """Report whether standard input is connected to a terminal"""
     return sys.stdin.isatty()
 
 
 def _build_answer_session() -> PromptSession[str]:
+    """Build a multiline prompt session where Esc+Enter or a /done line submits the answer"""
     bindings = KeyBindings()
 
     @bindings.add("enter")
@@ -221,6 +236,7 @@ def _build_answer_session() -> PromptSession[str]:
 
 
 def _read_interactive_answer(session: PromptSession[str]) -> str:
+    """Read one interactive answer, stripping the done sentinel and returning empty on EOF"""
     try:
         return strip_done_sentinel(session.prompt())
     except EOFError:
@@ -228,6 +244,8 @@ def _read_interactive_answer(session: PromptSession[str]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser with its interview, resume, reports, web, and grade
+    commands."""
     parser = argparse.ArgumentParser(
         prog="sotellme", description="Behavioral interview simulator and coach."
     )
@@ -266,48 +284,57 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_model_flags(parser: argparse.ArgumentParser) -> None:
+    """Add the shared provider, fast-model, and smart-model override flags to a subparser"""
     parser.add_argument("--provider", help="LLM provider: anthropic, openai, or google_genai.")
     parser.add_argument("--fast-model", help="Override the fast model slot.")
     parser.add_argument("--smart-model", help="Override the smart model slot.")
 
 
 def _data_dir() -> Path:
+    """Resolve the sotellme data directory from SOTELLME_DATA_DIR, defaulting to ~/.sotellme"""
     return Path(os.environ.get("SOTELLME_DATA_DIR", "~/.sotellme")).expanduser()
 
 
 def _build_profile_parser(config: ModelConfig) -> ProfileParser:
+    """Build a profile parser bound to the configured parser model and provider"""
     model = build_chat_model(config, "parser")
     provider = config.agents["parser"].provider
     return lambda cv_text: parse_candidate_profile(cv_text, model, provider)
 
 
 def _build_assessor(config: ModelConfig) -> Assessor:
+    """Build an answer assessor bound to the configured assessor model and provider"""
     model = build_chat_model(config, "assessor")
     provider = config.agents["assessor"].provider
     return lambda topic, transcript: assess_answer(topic, transcript, model, provider)
 
 
 def _build_director(config: ModelConfig) -> Director:
+    """Build an LLM director bound to the configured director model and provider"""
     return LLMDirector(build_chat_model(config, "director"), config.agents["director"].provider)
 
 
 def _build_interviewer(config: ModelConfig) -> Interviewer:
+    """Build an LLM interviewer bound to the configured interviewer model and provider"""
     return LLMInterviewer(
         build_chat_model(config, "interviewer"), config.agents["interviewer"].provider
     )
 
 
 def _build_guardrail(config: ModelConfig) -> Guardrail:
+    """Build an LLM guardrail bound to the configured guardrail model and provider"""
     return LLMGuardrail(build_chat_model(config, "guardrail"), config.agents["guardrail"].provider)
 
 
 def _build_role_builder(config: ModelConfig) -> RoleBuilder:
+    """Build a role-context builder bound to the configured role_builder model and provider"""
     model = build_chat_model(config, "role_builder")
     provider = config.agents["role_builder"].provider
     return lambda posting_text: build_role_context(posting_text, model, provider)
 
 
 def _build_researcher(config: ModelConfig) -> Researcher:
+    """Build a company researcher bound to the configured researcher model and page fetcher"""
     model = build_chat_model(config, "researcher")
 
     def research(posting_text: str, context: RoleContext) -> str:
@@ -317,12 +344,14 @@ def _build_researcher(config: ModelConfig) -> Researcher:
 
 
 def _build_grader(config: ModelConfig) -> Grader:
+    """Build a session grader bound to the configured grader model and provider"""
     model = build_chat_model(config, "grader")
     provider = config.agents["grader"].provider
     return lambda transcript, target_level: grade_session(transcript, target_level, model, provider)
 
 
 def _build_coacher(config: ModelConfig) -> Coacher:
+    """Build a session coacher bound to the configured coach model and provider"""
     model = build_chat_model(config, "coach")
     provider = config.agents["coach"].provider
     return lambda transcript, grade, target_level: coach_session(
@@ -331,6 +360,7 @@ def _build_coacher(config: ModelConfig) -> Coacher:
 
 
 def _env_cap(name: str, default: int) -> int:
+    """Read a positive integer cap from an environment variable, falling back to the default"""
     raw = os.environ.get(name)
     if raw is None:
         return default
@@ -348,6 +378,7 @@ def build_engine(
     director: Director | None = None,
     interviewer: Interviewer | None = None,
 ) -> InterviewEngine:
+    """Assemble an InterviewEngine with all agents wired from the model configuration."""
     return InterviewEngine(
         data_dir=data_dir or _data_dir(),
         profile_parser=_build_profile_parser(config),
@@ -377,6 +408,7 @@ WEB_ACCENT_COLOR = "#4f6d7a"
 
 
 def streamlit_run_command(web_module: Path, executable: str) -> list[str]:
+    """Build the command line that runs the web module under Streamlit."""
     return [
         executable,
         "-m",
@@ -389,6 +421,7 @@ def streamlit_run_command(web_module: Path, executable: str) -> list[str]:
 
 
 def _run_web(console: Console) -> int:
+    """Launch the Streamlit web UI, or print install guidance and return 1 if it is missing"""
     if importlib.util.find_spec("streamlit") is None:
         console.print(WEB_EXTRA_HINT, style="red", markup=False)
         return 1
@@ -402,6 +435,7 @@ def _run_session(
     session: SessionSnapshot,
     prices: Mapping[str, ModelPrice],
 ) -> None:
+    """Drive an interactive interview session loop from prompt to scorecard and coaching."""
     interactive = _interactive()
     answer_session = _build_answer_session() if interactive else None
     level_session: PromptSession[str] | None = PromptSession() if interactive else None
@@ -451,6 +485,7 @@ def _run_session(
 
 
 def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_level: str) -> None:
+    """Grade a saved transcript at a target level and print the resulting scorecard."""
     level = parse_target_level(raw_level)
     if level is None:
         raise TranscriptInputError(
@@ -468,10 +503,12 @@ def _run_grade(console: Console, config: ModelConfig, transcript_path: str, raw_
 
 
 def _run_reports(console: Console) -> None:
+    """Print the list of coaching reports found in the current working directory"""
     console.print(format_report_list(list_reports(Path.cwd())))
 
 
 def _tracing_callbacks() -> list[BaseCallbackHandler]:
+    """Build Langfuse tracing callbacks, warning to stderr and returning none on error"""
     try:
         return langfuse_callbacks(os.environ)
     except TracingError as exc:
@@ -480,6 +517,18 @@ def _tracing_callbacks() -> list[BaseCallbackHandler]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Parse arguments and run the requested sotellme command.
+
+    Dispatches to the reports, web, grade, interview, or resume flows, loading the
+    catalog and resolving model configuration for the model-driven commands. Known
+    domain errors are printed in red and turned into a non-zero exit code.
+
+    Args:
+        argv: Command-line arguments to parse; defaults to the process arguments.
+
+    Returns:
+        The process exit code: 0 on success, 1 when a known error is caught.
+    """
     args = build_parser().parse_args(argv)
     console = Console()
     if args.command == "reports":

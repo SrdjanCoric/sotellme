@@ -1,3 +1,5 @@
+"""Per-session token budget tracking and a callback that accumulates model usage."""
+
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -18,6 +20,8 @@ DEFAULT_TOKEN_BUDGET = 400_000
 
 @dataclass(frozen=True)
 class SessionBudget:
+    """Token budget for a session, reserving headroom for the feedback pass."""
+
     total_budget: int
     reserve: int
     tokens_used: int = 0
@@ -25,21 +29,26 @@ class SessionBudget:
 
     @property
     def interview_allowance(self) -> int:
+        """Tokens available to the interview after the reserve, never below zero."""
         return max(self.total_budget - self.reserve, 0)
 
     @property
     def wrap_threshold(self) -> int:
+        """Token count at which the interview should start wrapping up."""
         return int(self.wrap_fraction * self.interview_allowance)
 
     @property
     def exhausted(self) -> bool:
+        """Whether used tokens have reached the wrap threshold."""
         return self.tokens_used >= self.wrap_threshold
 
     def record(self, tokens: int) -> "SessionBudget":
+        """Return a copy of the budget with additional tokens counted as used."""
         return replace(self, tokens_used=self.tokens_used + tokens)
 
 
 def default_session_budget(total_budget: int, tokens_used: int = 0) -> SessionBudget:
+    """Build a SessionBudget with the default reserve fraction held back."""
     return SessionBudget(
         total_budget=total_budget,
         reserve=int(total_budget * RESERVE_FRACTION),
@@ -56,12 +65,14 @@ class BudgetCallback(BaseCallbackHandler):
     def record(
         self, model: str, input_tokens: int, output_tokens: int, cached_input_tokens: int = 0
     ) -> None:
+        """Add token counts to the running totals for a model."""
         bucket = self._usage.setdefault(model, [0, 0, 0])
         bucket[0] += input_tokens
         bucket[1] += output_tokens
         bucket[2] += cached_input_tokens
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        """Record token usage from a completed LLM call."""
         for generations in response.generations:
             for generation in generations:
                 message = getattr(generation, "message", None)
@@ -80,10 +91,12 @@ class BudgetCallback(BaseCallbackHandler):
 
     @property
     def total_tokens(self) -> int:
+        """Combined input and output tokens recorded across all models."""
         return sum(used_input + used_output for used_input, used_output, _ in self._usage.values())
 
     @property
     def usage(self) -> dict[str, ModelUsage]:
+        """Recorded usage as ModelUsage objects keyed by model identifier."""
         return {
             model: ModelUsage(
                 input_tokens=input_tokens,

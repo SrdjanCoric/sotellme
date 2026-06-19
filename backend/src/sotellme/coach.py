@@ -1,3 +1,5 @@
+"""Turn a graded session into candidate-facing coaching advice and drills."""
+
 from collections.abc import Sequence
 
 from langchain_core.exceptions import OutputParserException
@@ -12,6 +14,8 @@ from sotellme.role import TargetLevel
 
 
 class AnswerAdvice(BaseModel):
+    """Targeted coaching for one answer: what held it back and how to fix it."""
+
     question: str = Field(
         description="The interviewer question this advice is about, quoted near-verbatim."
     )
@@ -30,6 +34,8 @@ class AnswerAdvice(BaseModel):
 
 
 class Drill(BaseModel):
+    """A practice exercise that builds a recurring weak area."""
+
     focus: str = Field(
         description="The recurring weakness this drill builds, named in plain words."
     )
@@ -39,6 +45,8 @@ class Drill(BaseModel):
 
 
 class CoachReport(BaseModel):
+    """Full coaching report for a session: summary, per-answer advice, drills, and plan."""
+
     summary: str = Field(
         description=(
             "A candid read of how the session went across the answers, in the house voice: "
@@ -64,6 +72,8 @@ class CoachReport(BaseModel):
 
 
 class CoachingError(Exception):
+    """Raised when the session cannot be coached into a valid CoachReport."""
+
     pass
 
 
@@ -73,6 +83,7 @@ _COACH_RETRY_ATTEMPTS = 3
 
 
 def render_grade(grade: SessionGrade) -> str:
+    """Render a session grade into a plain-text block for the coach prompt."""
     blocks: list[str] = []
     for index, answer in enumerate(grade.scores, start=1):
         lines = [
@@ -95,6 +106,27 @@ def coach_session(
     model: BaseChatModel,
     provider: str = "",
 ) -> CoachReport:
+    """Produce a coaching report for a graded session via the model.
+
+    Returns an empty report when the grade has no scores. Otherwise renders the
+    transcript and grade into the coach prompt, caches the system prompt for the
+    provider, and invokes the model with structured output, retrying on validation or
+    parsing failures.
+
+    Args:
+        transcript: The interview turns the grade was produced from.
+        grade: The session grade to coach against.
+        target_level: The seniority level the coaching targets.
+        model: The chat model used to produce the structured report.
+        provider: The model provider name used to select prompt caching behavior.
+
+    Returns:
+        A CoachReport, empty when the grade has no scores.
+
+    Raises:
+        CoachingError: If the model output fails validation or parsing across all
+            retries, or is not a CoachReport.
+    """
     if not grade.scores:
         return CoachReport(summary="", answer_advice=[], drills=[], study_plan="")
     structured = model.with_structured_output(CoachReport).with_retry(

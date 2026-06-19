@@ -1,3 +1,5 @@
+"""Decide the next interview move from the situation so far via the model."""
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -18,6 +20,8 @@ DirectorAction = Literal["follow_up", "new_topic", "wrap_up", "terminate"]
 
 
 class DirectorDecision(BaseModel):
+    """The director's decision on what the interview should do next."""
+
     action: DirectorAction = Field(
         description=(
             "What happens next: follow_up digs into the last answer, new_topic opens "
@@ -44,6 +48,8 @@ class DirectorDecision(BaseModel):
 
 @dataclass(frozen=True)
 class DirectorSituation:
+    """The full state the director weighs when deciding the next move."""
+
     profile: CandidateProfile
     context: RoleContext
     emphasis: tuple[str, ...]
@@ -58,6 +64,8 @@ class DirectorSituation:
 
 
 class DirectorError(Exception):
+    """Raised when the next interview move cannot be decided."""
+
     pass
 
 
@@ -65,6 +73,7 @@ _DECIDE_FAILURE_MESSAGE = "Could not decide the next interview move. Try answeri
 
 
 def render_role_details(context: RoleContext) -> str:
+    """Render the role context plus weighted competencies for the director prompt."""
     lines: list[str] = []
     if context.company:
         lines.append(f"Company: {context.company}")
@@ -78,6 +87,7 @@ def render_role_details(context: RoleContext) -> str:
 
 
 def _star_gaps(entry: TopicAssessment) -> list[str]:
+    """List the STAR elements an assessed answer has not stated yet."""
     star = entry.assessment.star
     missing = [
         name
@@ -95,6 +105,7 @@ def _star_gaps(entry: TopicAssessment) -> list[str]:
 
 
 def render_assessments(log: Sequence[TopicAssessment]) -> str:
+    """Render the per-topic assessment log into a plain-text block for the prompt."""
     if not log:
         return "No answers assessed yet."
     lines: list[str] = []
@@ -115,11 +126,28 @@ def render_assessments(log: Sequence[TopicAssessment]) -> str:
 
 
 class LLMDirector:
+    """Decide the next interview move by prompting a chat model."""
+
     def __init__(self, model: BaseChatModel, provider: str = "") -> None:
         self._model = model
         self._provider = provider
 
     def decide(self, situation: DirectorSituation) -> DirectorDecision:
+        """Decide the next interview move for the given situation.
+
+        Renders the situation into the director prompt, caches the system prompt for
+        the provider, and invokes the model with structured output.
+
+        Args:
+            situation: The full interview state to base the decision on.
+
+        Returns:
+            The director's decision on what to do next.
+
+        Raises:
+            DirectorError: If the model output fails validation or parsing, or is not
+                a DirectorDecision.
+        """
         messages = cache_system_prompt(
             director_messages(
                 role_details=render_role_details(situation.context),

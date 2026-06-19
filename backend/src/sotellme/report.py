@@ -1,3 +1,5 @@
+"""Render and persist Markdown coaching reports for finished interviews."""
+
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -15,10 +17,12 @@ _REPORT_GLOB = f"{_REPORT_PREFIX}*.md"
 
 
 def report_filename(when: datetime) -> str:
+    """Build the report filename for a given timestamp."""
     return f"{_REPORT_PREFIX}{when:%Y%m%d-%H%M%S}.md"
 
 
 def render_report(report: CoachReport, transcript: Sequence[Turn]) -> str:
+    """Render a coaching report and transcript as a Markdown document."""
     sections: list[str] = ["# Interview coaching report"]
     if report.summary.strip():
         sections.append("## How it went\n\n" + report.summary.strip())
@@ -44,6 +48,7 @@ def render_report(report: CoachReport, transcript: Sequence[Turn]) -> str:
 
 
 def _free_report_path(directory: Path, filename: str) -> Path:
+    """Return a path that does not collide, appending a counter suffix if needed."""
     candidate = directory / filename
     stem, suffix = candidate.stem, candidate.suffix
     counter = 2
@@ -56,10 +61,12 @@ def _free_report_path(directory: Path, filename: str) -> Path:
 def write_report(
     report: CoachReport, transcript: Sequence[Turn], directory: Path, when: datetime
 ) -> Path:
+    """Render a report and write it to a fresh file in the given directory."""
     path = _free_report_path(directory, report_filename(when))
     path.write_text(render_report(report, transcript))
     return path
 
 
 def list_reports(directory: Path) -> list[Path]:
+    """List existing report files in a directory, newest first."""
     return sorted(directory.glob(_REPORT_GLOB), reverse=True)

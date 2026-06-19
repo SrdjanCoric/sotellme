@@ -1,3 +1,5 @@
+"""Agentic company research that drafts a brief from a posting and fetched web pages."""
+
 from collections.abc import Callable
 
 from langchain_core.language_models import BaseChatModel
@@ -36,6 +38,24 @@ def build_company_brief(
     fetcher: PageFetcher,
     max_fetches: int = DEFAULT_FETCH_CAP,
 ) -> str:
+    """Research a company and return a written brief built by the model.
+
+    The model is given the role context and posting and may call the ``fetch_page`` tool to
+    read web pages, up to ``max_fetches`` times; further fetch requests are answered with a
+    budget-used-up message. A failed fetch is reported back to the model rather than raised.
+    The loop runs for a bounded number of rounds, and a final wrap-up instruction forces a
+    brief if the model is still requesting tools at the end.
+
+    Args:
+        posting_text: The job posting text to research from.
+        context: The role context describing the candidate and target role.
+        model: Chat model used to drive the research and write the brief.
+        fetcher: Callable that fetches a URL and returns its visible text.
+        max_fetches: Maximum number of page fetches allowed for the session.
+
+    Returns:
+        The company brief text, stripped of surrounding whitespace.
+    """
     prompt = dict(research_messages(render_role_context(context), posting_text, max_fetches))
     messages: list[BaseMessage] = [SystemMessage(prompt["system"]), HumanMessage(prompt["human"])]
     bound = model.bind_tools([fetch_page])

@@ -1,3 +1,5 @@
+"""Define evaluation personas and their per-turn answer behaviors loaded from JSON."""
+
 import json
 from pathlib import Path
 from typing import Literal
@@ -19,11 +21,15 @@ AnswerBehavior = Literal[
 
 
 class PlantedTurn(BaseModel):
+    """An answer behavior override for a specific question turn."""
+
     turn: int = Field(ge=1, description="The 1-based question turn this override applies to.")
     behavior: AnswerBehavior
 
 
 class Persona(BaseModel):
+    """A scripted candidate persona for driving an evaluation run."""
+
     name: str
     target_level: TargetLevel
     cv: str
@@ -33,6 +39,7 @@ class Persona(BaseModel):
     planted_turns: list[PlantedTurn] = Field(default_factory=list)
 
     def behavior_for(self, turn: int) -> AnswerBehavior:
+        """Return the answer behavior for a question turn."""
         for planted in self.planted_turns:
             if planted.turn == turn:
                 return planted.behavior
@@ -40,6 +47,7 @@ class Persona(BaseModel):
 
 
 def load_personas(personas_dir: Path) -> list[Persona]:
+    """Load and validate all persona JSON files from a directory."""
     return [
         Persona.model_validate(json.loads(path.read_text()))
         for path in sorted(personas_dir.glob("*.json"))

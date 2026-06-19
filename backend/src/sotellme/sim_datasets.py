@@ -1,8 +1,8 @@
-"""Langfuse wiring for the synthetic interview simulation (Phase 8b).
+"""Langfuse wiring for the synthetic interview simulation.
 
 Uploads the committed personas as a Langfuse dataset and runs each one as a full simulated
-interview, judging every interviewer question. Dev-time only; reuses Phase 8a's Langfuse client
-and the run_experiment surface so question-quality scores compare run-to-run and slice by skill
+interview, judging every interviewer question. Dev-time only; reuses the Langfuse client and
+the run_experiment surface so question-quality scores compare run-to-run and slice by skill
 level and answer type (carried as dataset-item metadata). Synthetic data only.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langchain_core.callbacks import BaseCallbackHandler
 
@@ -19,8 +19,9 @@ from sotellme.catalog import ModelPrice
 from sotellme.config import ModelConfig, build_chat_model
 from sotellme.eval_datasets import apply_limit, langfuse_client
 from sotellme.judge import QuestionJudge
-from sotellme.personas import Persona
+from sotellme.personas import AnswerBehavior, Persona
 from sotellme.pricing import format_cost_summary, summarize_actual_cost
+from sotellme.role import TargetLevel
 from sotellme.simulation import (
     judge_session,
     run_persona_simulation,
@@ -41,7 +42,16 @@ PERSONA_DATASET_DESCRIPTION = (
 _COVERAGE_SCORE = {"good": 1.0, "weak": 0.5, "bad": 0.0}
 
 
-def _persona_metadata(persona: Persona) -> dict[str, Any]:
+class PersonaMetadata(TypedDict):
+    """Dataset-item metadata carried with each persona for slicing scores."""
+
+    target_level: TargetLevel
+    base_behavior: AnswerBehavior
+    behaviors: list[AnswerBehavior]
+
+
+def _persona_metadata(persona: Persona) -> PersonaMetadata:
+    """Derive the slicing metadata for a persona from its base and planted behaviors."""
     behaviors = sorted(
         {persona.base_behavior, *(planted.behavior for planted in persona.planted_turns)}
     )
@@ -57,6 +67,19 @@ def upload_persona_dataset(
     env: Mapping[str, str],
     dataset_name: str = PERSONA_DATASET_NAME,
 ) -> int:
+    """Create the persona Langfuse dataset and upload each persona as an item.
+
+    Args:
+        personas: The personas to upload.
+        env: Environment mapping holding the Langfuse keys.
+        dataset_name: Name of the dataset to create and upload into.
+
+    Returns:
+        The number of personas uploaded.
+
+    Raises:
+        TracingError: If the Langfuse keys are unset or the langfuse package is missing.
+    """
     client = langfuse_client(env)
     client.create_dataset(name=dataset_name, description=PERSONA_DATASET_DESCRIPTION)
     for persona in personas:
@@ -70,8 +93,10 @@ def upload_persona_dataset(
 
 
 def select_persona_items(items: Sequence[Any], persona_names: set[str] | None) -> list[Any]:
-    """Keep only the dataset items for the named personas, so `--persona` limits what runs (and
-    is billed), not just the cost estimate. None means run them all."""
+    """Keep only the dataset items for the named personas so `--persona` limits what runs.
+
+    Limits what is billed, not just the cost estimate. None means run them all.
+    """
     if not persona_names:
         return list(items)
     return [item for item in items if item.input.get("name") in persona_names]
@@ -90,6 +115,32 @@ def run_simulation_experiment(
     persona_names: set[str] | None = None,
     dataset_name: str = PERSONA_DATASET_NAME,
 ) -> str:
+    """Run each persona as a full simulated interview and judge it as a Langfuse experiment.
+
+    Builds the simulator and judge models on the fast and smart slots, fetches and limits
+    the persona dataset, then for each item runs the simulation, writes its artifact,
+    judges it, and emits per-dimension scores plus a competency-coverage score. Appends a
+    cost summary.
+
+    Args:
+        config: The model configuration for the simulation's agents.
+        prices: Model price lookup used to summarize cost.
+        env: Environment mapping holding the Langfuse keys.
+        data_dir: Directory the engine persists session data into.
+        artifacts_dir: Directory the session artifacts are written into.
+        cv_dir: Directory persona CVs are written into.
+        max_turns: Maximum number of turns per simulated session.
+        run_name: Optional name for this experiment run.
+        limit: Optional cap on how many personas to run.
+        persona_names: Persona names to run; None runs all.
+        dataset_name: Name of the persona dataset to run.
+
+    Returns:
+        The formatted experiment result followed by a cost summary.
+
+    Raises:
+        TracingError: If the Langfuse keys are unset or the langfuse package is missing.
+    """
     from langfuse import Evaluation
 
     client: Langfuse = langfuse_client(env)
