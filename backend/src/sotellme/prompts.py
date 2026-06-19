@@ -1,3 +1,5 @@
+"""Prompt templates and message builders for the sotellme interview agents."""
+
 from sotellme.coverage import DEFAULT_FOLLOW_UP_CAP
 
 PROFILE_EXTRACTION_SYSTEM_PROMPT = (
@@ -15,6 +17,7 @@ PROFILE_EXTRACTION_HUMAN_TEMPLATE = (
 
 
 def profile_extraction_messages(cv_text: str) -> list[tuple[str, str]]:
+    """Build the messages that extract a structured candidate profile from CV text."""
     return [
         ("system", PROFILE_EXTRACTION_SYSTEM_PROMPT),
         ("human", PROFILE_EXTRACTION_HUMAN_TEMPLATE.format(cv_text=cv_text)),
@@ -50,6 +53,7 @@ ROLE_CONTEXT_HUMAN_TEMPLATE = (
 
 
 def role_context_messages(posting_text: str) -> list[tuple[str, str]]:
+    """Build the messages that derive behavioral-round role context from a job posting."""
     return [
         ("system", ROLE_CONTEXT_SYSTEM_PROMPT),
         ("human", ROLE_CONTEXT_HUMAN_TEMPLATE.format(posting_text=posting_text)),
@@ -94,6 +98,7 @@ ASSESSOR_HUMAN_TEMPLATE = (
 
 
 def assessor_messages(topic: str, transcript_text: str) -> list[tuple[str, str]]:
+    """Build the messages that assess the latest answer for the interview director."""
     return [
         ("system", ASSESSOR_SYSTEM_PROMPT),
         ("human", ASSESSOR_HUMAN_TEMPLATE.format(topic=topic, transcript_text=transcript_text)),
@@ -132,6 +137,7 @@ RESEARCH_WRAP_INSTRUCTION = "Write the brief now from what you already have."
 def research_messages(
     role_details: str, posting_text: str, max_fetches: int
 ) -> list[tuple[str, str]]:
+    """Build the messages that research a company and write an interview brief."""
     return [
         ("system", RESEARCH_SYSTEM_PROMPT),
         (
@@ -276,6 +282,7 @@ def director_messages(
     follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
     follow_ups_exhausted: bool = False,
 ) -> list[tuple[str, str]]:
+    """Build the messages that ask the director to decide the next interview move."""
     emphasis_line = (
         DIRECTOR_EMPHASIS_TEMPLATE.format(emphasis=", ".join(emphasis)) if emphasis else ""
     )
@@ -442,6 +449,7 @@ def question_messages(
     transcript_text: str,
     directive: str,
 ) -> list[tuple[str, str]]:
+    """Build the messages that ask the interviewer to phrase the next question."""
     return [
         ("system", INTERVIEWER_SYSTEM_PROMPT),
         (
@@ -495,6 +503,7 @@ GUARDRAIL_HUMAN_TEMPLATE = (
 
 
 def guardrail_messages(question: str, answer: str) -> list[tuple[str, str]]:
+    """Build the messages that screen a candidate reply into allow/redirect/terminate."""
     return [
         ("system", GUARDRAIL_SYSTEM_PROMPT),
         ("human", GUARDRAIL_HUMAN_TEMPLATE.format(question=question, answer=answer)),
@@ -538,6 +547,7 @@ REDIRECT_HUMAN_TEMPLATE = (
 
 
 def redirect_messages(question: str) -> list[tuple[str, str]]:
+    """Build the messages that steer an off-topic candidate back to the question asked."""
     return [
         ("system", REDIRECT_SYSTEM_PROMPT),
         ("human", REDIRECT_HUMAN_TEMPLATE.format(question=question)),
@@ -639,6 +649,7 @@ GRADER_HUMAN_TEMPLATE = (
 
 
 def grader_messages(target_level: str, transcript_text: str) -> list[tuple[str, str]]:
+    """Build the messages that grade every answer in a finished interview transcript."""
     return [
         ("system", GRADER_SYSTEM_PROMPT),
         (
@@ -692,6 +703,7 @@ CLOSING_HUMAN_TEMPLATE = (
 
 
 def closing_messages(transcript_text: str) -> list[tuple[str, str]]:
+    """Build the messages that close out a finished practice interview."""
     return [
         ("system", CLOSING_SYSTEM_PROMPT),
         ("human", CLOSING_HUMAN_TEMPLATE.format(transcript_text=transcript_text)),
@@ -763,6 +775,7 @@ COACH_HUMAN_TEMPLATE = (
 def coach_messages(
     target_level: str, transcript_text: str, grade_text: str
 ) -> list[tuple[str, str]]:
+    """Build the messages that coach a candidate using the transcript and grades."""
     return [
         ("system", COACH_SYSTEM_PROMPT),
         (
@@ -845,6 +858,7 @@ def candidate_simulator_messages(
     question: str,
     transcript_text: str,
 ) -> list[tuple[str, str]]:
+    """Build the messages that have the candidate simulator answer a question in character."""
     return [
         ("system", CANDIDATE_SIMULATOR_SYSTEM_PROMPT),
         (
@@ -925,6 +939,7 @@ def question_judge_messages(
     sufficient_signal: bool,
     consecutive_follow_ups: int,
 ) -> list[tuple[str, str]]:
+    """Build the messages that judge the quality of a single interviewer question."""
     return [
         ("system", QUESTION_JUDGE_SYSTEM_PROMPT),
         (
@@ -960,6 +975,7 @@ COVERAGE_JUDGE_HUMAN_TEMPLATE = (
 def coverage_judge_messages(
     target_level: str, emphasis: str, transcript_text: str
 ) -> list[tuple[str, str]]:
+    """Build the messages that judge whether a session covered the demanded competencies."""
     return [
         ("system", COVERAGE_JUDGE_SYSTEM_PROMPT),
         (

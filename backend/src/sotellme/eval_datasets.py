@@ -1,3 +1,5 @@
+"""Per-agent eval datasets, scoring, and Langfuse experiment wiring for sotellme."""
+
 from __future__ import annotations
 
 import json
@@ -5,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from langchain_core.language_models import BaseChatModel
 
@@ -30,11 +32,15 @@ STAR_ELEMENTS = ("situation", "task", "action", "result", "quantified_result")
 
 @dataclass(frozen=True)
 class EvalContext:
+    """Filesystem context an eval needs to build its inputs."""
+
     fixtures_dir: Path
 
 
 @dataclass(frozen=True)
 class DatasetItem:
+    """One dataset item: an input, its expected output, and slicing metadata."""
+
     id: str
     input: dict[str, Any]
     expected_output: dict[str, Any]
@@ -43,24 +49,73 @@ class DatasetItem:
 
 @dataclass(frozen=True)
 class EvalScore:
+    """A single named score produced by evaluating an output."""
+
     name: str
     value: float
     comment: str = ""
 
 
+class TurnInput(TypedDict):
+    question: str
+    answer: str
+
+
+class ExpectedAnswer(TypedDict):
+    star: dict[str, bool]
+    weak_or_missing: list[str]
+    specificity: str
+    ownership: str
+    score: int
+
+
+class RoleExpectation(TypedDict, total=False):
+    company_contains: str
+    company_not_contains: str
+    framework_null: bool
+    framework_contains: str
+    framework_not_contains: str
+    competencies_include_any: list[str]
+    min_included: int
+    competencies_within: list[str]
+    target_level: str
+    target_level_null: bool
+
+
+class TranscriptExpectation(TypedDict, total=False):
+    senior_floor_turns: list[int]
+    senior_ceiling_turns: list[int]
+
+
 def apply_limit(items: Sequence[Any], limit: int | None) -> list[Any]:
-    """Keep the first `limit` items; `limit=0` selects nothing and `None` keeps them all. Guards
-    the falsy-zero trap where `if limit` treats `--limit 0` as 'no limit'."""
+    """Keep the first `limit` items; `limit=0` selects nothing and `None` keeps them all.
+
+    Guards the falsy-zero trap where `if limit` treats `--limit 0` as 'no limit'.
+    """
     if limit is None:
         return list(items)
     return list(items)[:limit]
 
 
-def _turns_from(transcript: Sequence[dict[str, Any]]) -> list[Turn]:
+def _turns_from(transcript: Sequence[TurnInput]) -> list[Turn]:
     return [Turn(question=t["question"], answer=t["answer"]) for t in transcript]
 
 
-def disagreements(answer: AnswerScore, expected: dict[str, Any]) -> dict[str, Any]:
+def disagreements(answer: AnswerScore, expected: ExpectedAnswer) -> dict[str, Any]:
+    """Compare a graded answer against its expectation and collect the disagreements.
+
+    Checks the STAR flags, the weak-or-missing set (which must lie between the required
+    flags and the flags allowed by required-plus-present), specificity, ownership, and the
+    score (allowing a tolerance of one point).
+
+    Args:
+        answer: The grader's score for the answer.
+        expected: The expected score for the answer.
+
+    Returns:
+        A mapping from each disagreeing field to a description of the mismatch; empty when
+        the answer agrees with the expectation.
+    """
     observed = answer.star.model_dump()
     found: dict[str, Any] = {}
     star_misses = {
@@ -95,7 +150,8 @@ def _profile_field_texts(profile: CandidateProfile, field_name: str) -> list[str
     raise ValueError(f"unknown profile field in eval case: {field_name}")
 
 
-def _role_failures(context: RoleContext, expect: dict[str, Any]) -> list[str]:
+def _role_failures(context: RoleContext, expect: RoleExpectation) -> list[str]:
+    """Collect the ways a derived role context fails its expectation."""
     failures: list[str] = []
     company = (context.company or "").lower()
     framework = (context.framework or "").lower()
@@ -131,7 +187,10 @@ def _role_failures(context: RoleContext, expect: dict[str, Any]) -> list[str]:
     return failures
 
 
-def _transcript_agreement(scores: Sequence[AnswerScore], expected: dict[str, Any]) -> EvalScore:
+def _transcript_agreement(
+    scores: Sequence[AnswerScore], expected: TranscriptExpectation
+) -> EvalScore:
+    """Score whether a transcript's grades respect the senior floor and ceiling turns."""
     too_low = [i for i in expected.get("senior_floor_turns", []) if scores[i - 1].score < 4]
     too_high = [i for i in expected.get("senior_ceiling_turns", []) if scores[i - 1].score > 3]
     parts = []
@@ -147,29 +206,41 @@ def _transcript_agreement(scores: Sequence[AnswerScore], expected: dict[str, Any
 
 
 class AgentEval(ABC):
+    """Base spec for one agent's eval: how to build, run, and score its dataset."""
+
     agent: str
     dataset_name: str
     cases_file: str
     model_slot: str
 
     @abstractmethod
-    def to_input(self, case: dict[str, Any], ctx: EvalContext) -> dict[str, Any]: ...
+    def to_input(self, case: dict[str, Any], ctx: EvalContext) -> dict[str, Any]:
+        """Build the input payload for a case."""
+        ...
 
     @abstractmethod
-    def to_expected(self, case: dict[str, Any]) -> dict[str, Any]: ...
+    def to_expected(self, case: dict[str, Any]) -> dict[str, Any]:
+        """Build the expected output for a case."""
+        ...
 
     @abstractmethod
     def evaluate(
         self, output: dict[str, Any], expected: dict[str, Any], metadata: dict[str, Any]
-    ) -> list[EvalScore]: ...
+    ) -> list[EvalScore]:
+        """Score an output against its expectation."""
+        ...
 
     @abstractmethod
-    def run(self, item_input: dict[str, Any], model: BaseChatModel) -> dict[str, Any]: ...
+    def run(self, item_input: dict[str, Any], model: BaseChatModel) -> dict[str, Any]:
+        """Run the agent on an input payload."""
+        ...
 
     def to_metadata(self, case: dict[str, Any]) -> dict[str, Any]:
+        """Build the slicing metadata for a case; empty by default."""
         return {}
 
     def to_items(self, cases: Sequence[dict[str, Any]], ctx: EvalContext) -> list[DatasetItem]:
+        """Build dataset items from raw cases."""
         return [
             DatasetItem(
                 id=f"{self.dataset_name}:{case['name']}",
@@ -182,6 +253,8 @@ class AgentEval(ABC):
 
 
 class GraderEval(AgentEval):
+    """Eval for the grader: scores per-answer agreement and senior level-fit on transcripts."""
+
     agent = "grader"
     dataset_name = "sotellme-grader"
     cases_file = "grader_cases.json"
@@ -211,8 +284,8 @@ class GraderEval(AgentEval):
     ) -> list[EvalScore]:
         scores = [AnswerScore.model_validate(score) for score in output["scores"]]
         if metadata.get("kind") == "transcript":
-            return [_transcript_agreement(scores, expected)]
-        found = disagreements(scores[0], expected)
+            return [_transcript_agreement(scores, cast(TranscriptExpectation, expected))]
+        found = disagreements(scores[0], cast(ExpectedAnswer, expected))
         comment = "; ".join(f"{key}: {value}" for key, value in found.items())
         return [EvalScore(name="grader_agreement", value=0.0 if found else 1.0, comment=comment)]
 
@@ -222,6 +295,8 @@ class GraderEval(AgentEval):
 
 
 class AssessorEval(AgentEval):
+    """Eval for the assessor: scores STAR/sufficiency reads and whether key claims are chased."""
+
     agent = "assessor"
     dataset_name = "sotellme-assessor"
     cases_file = "assessor_cases.json"
@@ -261,6 +336,8 @@ class AssessorEval(AgentEval):
 
 
 class RoleEval(AgentEval):
+    """Eval for role context: scores company, framework, competency, and level expectations."""
+
     agent = "role"
     dataset_name = "sotellme-role-context"
     cases_file = "role_context_cases.json"
@@ -275,7 +352,9 @@ class RoleEval(AgentEval):
     def evaluate(
         self, output: dict[str, Any], expected: dict[str, Any], metadata: dict[str, Any]
     ) -> list[EvalScore]:
-        failures = _role_failures(RoleContext.model_validate(output), expected)
+        failures = _role_failures(
+            RoleContext.model_validate(output), cast(RoleExpectation, expected)
+        )
         return [
             EvalScore(
                 name="role_agreement",
@@ -289,6 +368,8 @@ class RoleEval(AgentEval):
 
 
 class ProfileEval(AgentEval):
+    """Eval for the profile parser: scores the fraction of named CV facts it surfaces."""
+
     agent = "profile"
     dataset_name = "sotellme-profile-parser"
     cases_file = "profile_parser_cases.json"
@@ -327,6 +408,7 @@ class ProfileEval(AgentEval):
 
 
 def _coaching_prose(report: CoachReport) -> str:
+    """Flatten all prose in a coach report into one newline-joined string."""
     parts = [report.summary, report.study_plan]
     for advice in report.answer_advice:
         parts.extend([advice.diagnosis, advice.fix])
@@ -336,6 +418,8 @@ def _coaching_prose(report: CoachReport) -> str:
 
 
 class CoachEval(AgentEval):
+    """Eval for the coach: scores the coaching prose for house-voice tells."""
+
     agent = "coach"
     dataset_name = "sotellme-coach"
     cases_file = "coach_cases.json"
@@ -370,6 +454,7 @@ class CoachEval(AgentEval):
 
 
 def dataset_specs() -> dict[str, AgentEval]:
+    """Build the registry of agent eval specs keyed by agent name."""
     specs: list[AgentEval] = [
         GraderEval(),
         AssessorEval(),
@@ -381,6 +466,7 @@ def dataset_specs() -> dict[str, AgentEval]:
 
 
 def build_items(spec: AgentEval, evals_dir: Path, ctx: EvalContext) -> list[DatasetItem]:
+    """Load a spec's cases file and build its dataset items."""
     document = json.loads((evals_dir / spec.cases_file).read_text())
     cases: list[dict[str, Any]] = document["cases"]
     return spec.to_items(cases, ctx)
@@ -392,6 +478,7 @@ DEFAULT_LANGFUSE_TIMEOUT = 30
 
 
 def _resolve_timeout(env: Mapping[str, str]) -> int:
+    """Read the Langfuse timeout from the environment, falling back to the default."""
     try:
         return int(env["LANGFUSE_TIMEOUT"])
     except (KeyError, ValueError):
@@ -399,6 +486,7 @@ def _resolve_timeout(env: Mapping[str, str]) -> int:
 
 
 def _langfuse_client(env: Mapping[str, str]) -> Langfuse:
+    """Build a Langfuse client, raising TracingError when keys or the package are missing."""
     if not (env.get("LANGFUSE_PUBLIC_KEY") and env.get("LANGFUSE_SECRET_KEY")):
         raise TracingError(
             "Langfuse keys are not set. Export LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, "
@@ -414,6 +502,7 @@ def _langfuse_client(env: Mapping[str, str]) -> Langfuse:
 
 
 def langfuse_client(env: Mapping[str, str]) -> Langfuse:
+    """Build a Langfuse client from the environment."""
     return _langfuse_client(env)
 
 
@@ -423,6 +512,20 @@ def upload_datasets(
     ctx: EvalContext,
     env: Mapping[str, str],
 ) -> list[tuple[str, int]]:
+    """Create each spec's Langfuse dataset and upload its built items.
+
+    Args:
+        specs: The eval specs whose datasets are uploaded.
+        evals_dir: Directory holding the cases files.
+        ctx: The eval context.
+        env: Environment mapping holding the Langfuse keys.
+
+    Returns:
+        One (dataset_name, item_count) pair per uploaded spec.
+
+    Raises:
+        TracingError: If the Langfuse keys are unset or the langfuse package is missing.
+    """
     client = _langfuse_client(env)
     uploaded: list[tuple[str, int]] = []
     for spec in specs:
@@ -451,6 +554,25 @@ def run_dataset(
     run_name: str | None = None,
     limit: int | None = None,
 ) -> str:
+    """Run one agent's eval dataset as a Langfuse experiment and report the results.
+
+    Attaches a budget callback to the spec's model slot, fetches and limits the dataset,
+    runs each item through the spec's task and evaluator, and appends a cost summary.
+
+    Args:
+        spec: The eval spec to run.
+        models: Chat models keyed by slot ("fast"/"smart").
+        prices: Model price lookup used to summarize cost.
+        env: Environment mapping holding the Langfuse keys.
+        run_name: Optional name for this experiment run.
+        limit: Optional cap on how many dataset items to run.
+
+    Returns:
+        The formatted experiment result followed by a cost summary.
+
+    Raises:
+        TracingError: If the Langfuse keys are unset or the langfuse package is missing.
+    """
     from langfuse import Evaluation
 
     client = _langfuse_client(env)

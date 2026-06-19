@@ -1,3 +1,5 @@
+"""Assess the latest answer for STAR coverage and signal on the current topic."""
+
 from collections.abc import Sequence
 
 from langchain_core.exceptions import OutputParserException
@@ -10,6 +12,8 @@ from sotellme.prompts import assessor_messages
 
 
 class StarFlags(BaseModel):
+    """Which STAR story elements an answer actually states."""
+
     situation: bool = Field(
         description="The answer sets the scene: the team, company, or context the story happens in."
     )
@@ -24,6 +28,8 @@ class StarFlags(BaseModel):
 
 
 class AnswerAssessment(BaseModel):
+    """Assessment of the latest answer's STAR coverage, signal, and claims."""
+
     star: StarFlags = Field(
         description="Which story elements the latest answer states, as evidence."
     )
@@ -42,11 +48,15 @@ class AnswerAssessment(BaseModel):
 
 
 class TopicAssessment(BaseModel):
+    """An answer assessment paired with the topic it was made on."""
+
     topic: str
     assessment: AnswerAssessment
 
 
 class AssessorError(Exception):
+    """Raised when the latest answer cannot be assessed."""
+
     pass
 
 
@@ -56,6 +66,24 @@ _ASSESS_FAILURE_MESSAGE = "Could not assess the answer. Try answering again."
 def assess_answer(
     topic: str, transcript: Sequence[Turn], model: BaseChatModel, provider: str = ""
 ) -> AnswerAssessment:
+    """Assess the latest answer on the current topic via the model.
+
+    Renders the transcript into the assessor prompt, caches the system prompt for the
+    provider, and invokes the model with structured output.
+
+    Args:
+        topic: The current topic the latest answer is on.
+        transcript: The interview turns so far.
+        model: The chat model used to produce the assessment.
+        provider: The model provider name used to select prompt caching behavior.
+
+    Returns:
+        The assessment of the latest answer.
+
+    Raises:
+        AssessorError: If the model output fails validation or parsing, or is not an
+            AnswerAssessment.
+    """
     structured = model.with_structured_output(AnswerAssessment)
     try:
         messages = cache_system_prompt(

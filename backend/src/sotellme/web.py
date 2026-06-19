@@ -1,3 +1,5 @@
+"""Streamlit web UI for running mock behavioral interviews."""
+
 import os
 import tempfile
 from collections.abc import Mapping
@@ -73,6 +75,8 @@ ChatMessage = tuple[Literal["assistant", "user"], str]
 
 @dataclass
 class WebState:
+    """In-session view of an interview's progress held in Streamlit session state."""
+
     thread_id: str
     profile: CandidateProfile
     needs_level: bool
@@ -87,6 +91,7 @@ class WebState:
 
 
 def state_from_snapshot(snapshot: SessionSnapshot) -> WebState:
+    """Build a WebState from a persisted session snapshot."""
     return WebState(
         thread_id=snapshot.thread_id,
         profile=snapshot.profile,
@@ -103,6 +108,7 @@ def state_from_snapshot(snapshot: SessionSnapshot) -> WebState:
 
 
 def state_after_answer(state: WebState, answer: str, result: TurnResult) -> WebState:
+    """Advance the web state after the engine processes an answer."""
     answered = state.answered
     if state.question is not None:
         answered = [*answered, Turn(question=state.question, answer=answer)]
@@ -120,6 +126,7 @@ def state_after_answer(state: WebState, answer: str, result: TurnResult) -> WebS
 
 
 def resumable_state(snapshot: SessionSnapshot) -> WebState | None:
+    """Return the snapshot as a resumable state, or None when already reported."""
     state = state_from_snapshot(snapshot)
     if phase_of(state) == "report":
         return None
@@ -127,12 +134,14 @@ def resumable_state(snapshot: SessionSnapshot) -> WebState | None:
 
 
 def session_primary_line(item: SessionListItem) -> str:
+    """Build the headline label for a past session in the history list."""
     if item.company and item.role_title:
         return f"{item.company} — {item.role_title}"
     return item.role_title or item.company or "Interview"
 
 
 def _format_session_date(created_at: str | None) -> str | None:
+    """Format an ISO timestamp as a short "Mon DD" date, or None if unparseable."""
     if not created_at:
         return None
     try:
@@ -142,6 +151,7 @@ def _format_session_date(created_at: str | None) -> str | None:
 
 
 def session_secondary_line(item: SessionListItem) -> str:
+    """Build the sub-label for a past session in the history list."""
     parts = []
     if item.target_level:
         parts.append(item.target_level.capitalize())
@@ -153,6 +163,7 @@ def session_secondary_line(item: SessionListItem) -> str:
 
 
 def phase_of(state: WebState | None) -> Phase:
+    """Determine which UI phase a state is in."""
     if state is None:
         return "setup"
     if state.needs_level:
@@ -163,6 +174,7 @@ def phase_of(state: WebState | None) -> Phase:
 
 
 def model_choices(catalog: Catalog) -> list[str]:
+    """List every "provider:model" choice available in the catalog."""
     return [
         f"{provider}:{model}"
         for provider in sorted(catalog.providers)
@@ -171,6 +183,7 @@ def model_choices(catalog: Catalog) -> list[str]:
 
 
 def agent_overrides_from_selections(selections: Mapping[str, str]) -> dict[str, AgentModel]:
+    """Convert per-agent UI selections into model overrides."""
     overrides: dict[str, AgentModel] = {}
     for role, choice in selections.items():
         if choice == DEFAULT_CHOICE:
@@ -181,6 +194,7 @@ def agent_overrides_from_selections(selections: Mapping[str, str]) -> dict[str, 
 
 
 def default_provider(catalog: Catalog, env: Mapping[str, str]) -> str | None:
+    """Pick the provider to default to from the environment and catalog."""
     chosen = env.get("SOTELLME_PROVIDER")
     if chosen in catalog.providers:
         return chosen
@@ -191,17 +205,20 @@ def default_provider(catalog: Catalog, env: Mapping[str, str]) -> str | None:
 
 
 def clean_posting(raw: str) -> str | None:
+    """Strip a raw posting value, returning None when it is blank."""
     stripped = raw.strip()
     return stripped or None
 
 
 def posting_to_resolve(mode: str, url: str, text: str) -> tuple[str | None, bool]:
+    """Select the posting value to resolve based on the input mode."""
     if mode == LINK_MODE:
         return clean_posting(url), True
     return clean_posting(text), False
 
 
 def save_upload(name: str, data: bytes, directory: Path) -> Path:
+    """Write uploaded bytes to a temporary file in the given directory."""
     directory.mkdir(parents=True, exist_ok=True)
     fd, raw_path = tempfile.mkstemp(suffix=Path(name).suffix, dir=directory)
     with os.fdopen(fd, "wb") as handle:
@@ -210,6 +227,7 @@ def save_upload(name: str, data: bytes, directory: Path) -> Path:
 
 
 def chat_messages(state: WebState) -> list[ChatMessage]:
+    """Build the chat transcript to render for a state."""
     messages: list[ChatMessage] = []
     for turn in state.answered:
         messages.append(("assistant", turn.question))
@@ -235,6 +253,7 @@ AGENT_STEP_LABELS = {
 
 
 def agent_step_label(tags: Any) -> str | None:
+    """Map LangChain run tags to a human-readable progress label."""
     if not tags:
         return None
     for tag in tags:
@@ -253,15 +272,18 @@ class _ModelProgress(BaseCallbackHandler):
         self._last_written: str | None = None
 
     def aim(self, status: Any, label: str) -> None:
+        """Point progress updates at a status widget and reset the step counter."""
         self._status = status
         self._label = label
         self._step = 0
         self._last_written = None
 
     def clear(self) -> None:
+        """Stop updating any status widget."""
         self._status = None
 
     def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
+        """Advance the step counter and update the status label on each model start."""
         if self._status is None:
             return
         self._step += 1
@@ -276,6 +298,14 @@ class _ModelProgress(BaseCallbackHandler):
 
 
 def run() -> None:
+    """Render the full Streamlit app and route to the current phase.
+
+    Configures the page, loads the catalog, recovers any in-flight or resumable
+    session, renders the sidebar, and dispatches to the setup, level, interview,
+    or report view depending on the recovered state. Shows an error and returns
+    early when the catalog cannot be loaded, and falls back to setup when no
+    engine is available for an active session.
+    """
     import streamlit as st
 
     st.set_page_config(page_title="sotellme", page_icon="🗣️")
@@ -309,6 +339,7 @@ def run() -> None:
 
 
 def _tracing_callbacks() -> list[BaseCallbackHandler]:
+    """Return Langfuse tracing callbacks, warning and returning none on error."""
     import streamlit as st
 
     try:
@@ -319,6 +350,7 @@ def _tracing_callbacks() -> list[BaseCallbackHandler]:
 
 
 def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
+    """Build an engine from the default provider, or None if unavailable."""
     provider = default_provider(catalog, os.environ)
     if provider is None:
         return None
@@ -330,6 +362,7 @@ def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
 
 
 def _recover(catalog: Catalog) -> WebState | None:
+    """Recover the web state to render from session state or the latest session."""
     import streamlit as st
 
     pending = st.session_state.pop("pending_thread", None)
@@ -357,6 +390,7 @@ def _recover(catalog: Catalog) -> WebState | None:
 
 
 def _listing_engine(catalog: Catalog) -> InterviewEngine | None:
+    """Return the session engine, building and caching a recovery one if absent."""
     import streamlit as st
 
     engine = st.session_state.get("engine")
@@ -369,6 +403,7 @@ def _listing_engine(catalog: Catalog) -> InterviewEngine | None:
 
 
 def _start_new_interview() -> None:
+    """Clear the active session state and rerun into the new-interview setup."""
     import streamlit as st
 
     for key in ("state", "report_path"):
@@ -378,12 +413,14 @@ def _start_new_interview() -> None:
 
 
 def _request_open(thread_id: str) -> None:
+    """Mark a thread to be opened on the next run."""
     import streamlit as st
 
     st.session_state.pending_thread = thread_id
 
 
 def _open_session(catalog: Catalog, thread_id: str) -> WebState | None:
+    """Load a session by thread id into session state, warning on failure."""
     import streamlit as st
 
     engine = _listing_engine(catalog)
@@ -403,6 +440,7 @@ def _open_session(catalog: Catalog, thread_id: str) -> WebState | None:
 
 
 def _render_sidebar(catalog: Catalog, state: WebState | None) -> None:
+    """Render the sidebar: new-interview button, tracing hint, and history."""
     import streamlit as st
 
     with st.sidebar:
@@ -414,12 +452,14 @@ def _render_sidebar(catalog: Catalog, state: WebState | None) -> None:
 
 
 def _invalidate_history() -> None:
+    """Drop the cached history list so it is reloaded on the next render."""
     import streamlit as st
 
     st.session_state.pop("history_items", None)
 
 
 def _render_history(catalog: Catalog, state: WebState | None) -> None:
+    """Render the past-interviews list, caching it and highlighting the active one."""
     import streamlit as st
 
     engine = _listing_engine(catalog)
@@ -450,6 +490,7 @@ def _render_history(catalog: Catalog, state: WebState | None) -> None:
 
 
 def _render_setup(catalog: Catalog) -> None:
+    """Render the interview setup form and start a session on submit."""
     import streamlit as st
 
     st.subheader("Start an interview")
@@ -531,6 +572,7 @@ def _render_setup(catalog: Catalog) -> None:
 
 
 def _render_level(engine: InterviewEngine, state: WebState) -> None:
+    """Render the target-level prompt and submit the chosen level."""
     import streamlit as st
 
     st.info("This posting doesn't state a level. What level is this interview for?")
@@ -549,6 +591,7 @@ def _render_level(engine: InterviewEngine, state: WebState) -> None:
 
 
 def _render_level_caption(state: WebState) -> None:
+    """Render a caption naming the interview's target level, if one is set."""
     import streamlit as st
 
     if state.level is not None:
@@ -556,6 +599,7 @@ def _render_level_caption(state: WebState) -> None:
 
 
 def _render_interview(engine: InterviewEngine, state: WebState) -> None:
+    """Render the interview chat and submit the user's next answer."""
     import streamlit as st
 
     _render_level_caption(state)
@@ -580,12 +624,14 @@ def _render_interview(engine: InterviewEngine, state: WebState) -> None:
 
 
 def _test_answer() -> str | None:
+    """Return the canned test answer when test mode is on, else None."""
     if not os.environ.get("SOTELLME_TEST_MODE"):
         return None
     return os.environ.get("SOTELLME_TEST_ANSWER") or DEFAULT_TEST_ANSWER
 
 
 def _render_test_autopilot(engine: InterviewEngine, state: WebState) -> None:
+    """Render and run the test-mode autopilot that answers to the end."""
     import streamlit as st
 
     answer = _test_answer()
@@ -611,6 +657,7 @@ def _render_test_autopilot(engine: InterviewEngine, state: WebState) -> None:
 
 
 def _aim_progress(status: Any, label: str) -> None:
+    """Point the cached progress handler at a status widget, if one exists."""
     import streamlit as st
 
     progress = st.session_state.get("progress")
@@ -619,6 +666,7 @@ def _aim_progress(status: Any, label: str) -> None:
 
 
 def _render_report(state: WebState) -> None:
+    """Render the final report: transcript, scorecard, coaching, and save option."""
     import streamlit as st
 
     _render_level_caption(state)
@@ -641,6 +689,7 @@ def _render_report(state: WebState) -> None:
 
 
 def _upload_dir() -> Path:
+    """Return the directory uploaded CVs are written to."""
     return Path(tempfile.gettempdir())
 
 

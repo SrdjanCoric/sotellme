@@ -1,3 +1,5 @@
+"""Attach an Anthropic prompt-cache breakpoint to a large enough system prompt."""
+
 from collections.abc import Sequence
 
 from langchain_core.messages import SystemMessage
@@ -15,6 +17,19 @@ CachedMessages = list[PromptMessage | SystemMessage]
 
 
 def cache_system_prompt(messages: Sequence[PromptMessage], provider: str) -> CachedMessages:
+    """Add an ephemeral cache breakpoint to the leading system message when worthwhile.
+
+    The messages are returned unchanged unless the provider is Anthropic, the first message is
+    a system message, and its text is long enough to be worth caching; in that case the first
+    message is replaced with a SystemMessage carrying an ephemeral cache_control block.
+
+    Args:
+        messages: Role/text message tuples, with any system prompt first.
+        provider: Model provider identifier.
+
+    Returns:
+        The messages, with the leading system prompt rewritten for caching when eligible.
+    """
     out: CachedMessages = list(messages)
     if provider != ANTHROPIC_PROVIDER or not out:
         return out

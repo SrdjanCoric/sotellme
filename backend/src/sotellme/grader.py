@@ -1,3 +1,5 @@
+"""Grade an interview transcript answer by answer at the candidate's target level."""
+
 from collections.abc import Sequence
 from typing import Literal
 
@@ -15,6 +17,8 @@ StarElement = Literal["situation", "task", "action", "result", "quantified_resul
 
 
 class AnswerScore(BaseModel):
+    """Structured score for a single candidate answer at the target level."""
+
     question: str = Field(
         description="The interviewer question this answer responds to, quoted near-verbatim."
     )
@@ -62,12 +66,16 @@ class AnswerScore(BaseModel):
 
 
 class SessionGrade(BaseModel):
+    """Grades for every answer in a session, in transcript order."""
+
     scores: list[AnswerScore] = Field(
         description="One score per answer the candidate gave, in transcript order."
     )
 
 
 class GradingError(Exception):
+    """Raised when the session cannot be graded into a valid SessionGrade."""
+
     pass
 
 
@@ -83,6 +91,25 @@ def grade_session(
     model: BaseChatModel,
     provider: str = "",
 ) -> SessionGrade:
+    """Score every answer in the transcript at the target level via the model.
+
+    Renders the transcript into the grader prompt, caches the system prompt for the
+    provider, and invokes the model with structured output, retrying on validation or
+    parsing failures.
+
+    Args:
+        transcript: The interview turns to grade, in order.
+        target_level: The seniority level to grade the answers against.
+        model: The chat model used to produce the structured grade.
+        provider: The model provider name used to select prompt caching behavior.
+
+    Returns:
+        A SessionGrade holding one score per answer.
+
+    Raises:
+        GradingError: If the model output fails validation or parsing across all
+            retries, or is not a SessionGrade.
+    """
     structured = model.with_structured_output(SessionGrade).with_retry(
         retry_if_exception_type=(ValidationError, OutputParserException),
         wait_exponential_jitter=False,

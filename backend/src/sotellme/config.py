@@ -1,3 +1,5 @@
+"""Resolve and build per-agent chat model configuration from the catalog and environment."""
+
 from collections.abc import Mapping
 
 from langchain.chat_models import init_chat_model
@@ -30,15 +32,19 @@ AGENT_TAG_PREFIX = "sotellme-agent:"
 
 
 class ModelConfigError(Exception):
-    pass
+    """Raised when model configuration is invalid or required API keys are missing."""
 
 
 class AgentModel(BaseModel):
+    """A concrete provider and model assigned to a single agent."""
+
     provider: str
     model: str
 
 
 class ModelConfig(BaseModel):
+    """Fully resolved model configuration for every agent."""
+
     provider: str
     fast_model: str
     smart_model: str
@@ -46,6 +52,7 @@ class ModelConfig(BaseModel):
 
 
 def _validate_agent(role: str, agent: AgentModel, catalog: Catalog) -> None:
+    """Validate that an agent's provider and model exist in the catalog."""
     if agent.provider not in catalog.providers:
         valid = ", ".join(sorted(catalog.providers))
         raise ModelConfigError(
@@ -58,6 +65,7 @@ def _validate_agent(role: str, agent: AgentModel, catalog: Catalog) -> None:
 
 
 def _agent_from_spec(role: str, spec: str, catalog: Catalog) -> AgentModel:
+    """Parse a 'provider:model' spec into a validated AgentModel."""
     provider, _, model = spec.partition(":")
     if not _ or not model:
         raise ModelConfigError(
@@ -69,6 +77,7 @@ def _agent_from_spec(role: str, spec: str, catalog: Catalog) -> AgentModel:
 
 
 def _require_keys(agents: Mapping[str, AgentModel], env: Mapping[str, str]) -> None:
+    """Raise if any provider used by the agents lacks its API key in the environment."""
     missing = {
         PROVIDER_KEY_VARS[agent.provider]
         for agent in agents.values()
@@ -89,6 +98,28 @@ def resolve_model_config(
     catalog: Catalog | None = None,
     agent_overrides: Mapping[str, AgentModel] | None = None,
 ) -> ModelConfig:
+    """Resolve a complete model configuration for all agents.
+
+    Starts from the provider's tier defaults, applies per-agent assignments from the
+    catalog, then applies any explicit agent overrides, and finally checks that every
+    selected provider has an API key available.
+
+    Args:
+        env: Mapping of environment variables used for defaults and API keys.
+        provider: Provider to use; falls back to SOTELLME_PROVIDER in env.
+        fast_model: Fast-tier model name; falls back to env then provider default.
+        smart_model: Smart-tier model name; falls back to env then provider default.
+        catalog: Model catalog to validate against; defaults to the packaged catalog.
+        agent_overrides: Explicit per-agent model assignments applied last.
+
+    Returns:
+        A fully resolved ModelConfig.
+
+    Raises:
+        ModelConfigError: If no provider is selected, the provider is unknown, the
+            catalog references an unknown agent, an assignment is invalid, or an
+            API key is missing.
+    """
     catalog = catalog or default_catalog()
     provider = provider or env.get("SOTELLME_PROVIDER")
     if not provider:
@@ -119,6 +150,18 @@ def resolve_model_config(
 
 
 def build_chat_model(config: ModelConfig, key: str) -> BaseChatModel:
+    """Build a chat model for an agent role or a tier key.
+
+    Args:
+        config: The resolved model configuration.
+        key: An agent role, or one of the tier keys 'fast' or 'smart'.
+
+    Returns:
+        An initialized chat model. Agent-role models are tagged with the agent tag.
+
+    Raises:
+        ModelConfigError: If the key is neither a known agent nor a tier key.
+    """
     if key in config.agents:
         agent = config.agents[key]
         return init_chat_model(

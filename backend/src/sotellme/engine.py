@@ -1,3 +1,5 @@
+"""LangGraph interview engine that orchestrates the interview, grading, and coaching flow."""
+
 import sqlite3
 import uuid
 from collections.abc import Callable, Sequence
@@ -75,10 +77,16 @@ Coacher = Callable[[Sequence[Turn], SessionGrade, TargetLevel], CoachReport]
 
 
 class Director(Protocol):
-    def decide(self, situation: DirectorSituation) -> DirectorDecision: ...
+    """Decides the next interview move from the current situation."""
+
+    def decide(self, situation: DirectorSituation) -> DirectorDecision:
+        """Decide the next interview action for the given situation"""
+        ...
 
 
 class Interviewer(Protocol):
+    """Generates interviewer turns: questions, redirects, and the closing remark."""
+
     def question_for(
         self,
         decision: DirectorDecision,
@@ -86,22 +94,36 @@ class Interviewer(Protocol):
         context: RoleContext,
         brief: str,
         transcript: Sequence[Turn],
-    ) -> str: ...
+    ) -> str:
+        """Produce the next interview question for the decision and session context"""
+        ...
 
-    def closing_turn(self, transcript: Sequence[Turn]) -> str: ...
+    def closing_turn(self, transcript: Sequence[Turn]) -> str:
+        """Produce the interviewer's closing remark for the transcript"""
+        ...
 
-    def redirect_turn(self, question: str) -> str: ...
+    def redirect_turn(self, question: str) -> str:
+        """Produce a redirect prompt steering the candidate back to the question"""
+        ...
 
 
 class Guardrail(Protocol):
-    def classify(self, question: str, answer: str) -> GuardrailVerdict: ...
+    """Classifies a question and answer into a guardrail verdict."""
+
+    def classify(self, question: str, answer: str) -> GuardrailVerdict:
+        """Classify a question and answer into a guardrail verdict"""
+        ...
 
 
 class EngineError(Exception):
+    """Raised when an interview session cannot be started, resumed, or replayed."""
+
     pass
 
 
 class InterviewState(TypedDict, total=False):
+    """Mutable state threaded through the interview graph nodes."""
+
     cv_path: str
     cv_text: str
     posting_text: str
@@ -126,6 +148,8 @@ class InterviewState(TypedDict, total=False):
 
 
 class SessionSnapshot(BaseModel):
+    """Point-in-time view of an interview session for callers to render or resume."""
+
     thread_id: str
     profile: CandidateProfile
     needs_level: bool
@@ -139,6 +163,8 @@ class SessionSnapshot(BaseModel):
 
 
 class SessionListItem(BaseModel):
+    """Summary row describing one stored session for listing."""
+
     thread_id: str
     company: str | None = None
     role_title: str | None = None
@@ -148,6 +174,8 @@ class SessionListItem(BaseModel):
 
 
 class TurnResult(BaseModel):
+    """Outcome of submitting one answer to the engine."""
+
     next_question: str | None = None
     closing: str | None = None
     grade: SessionGrade | None = None
@@ -156,14 +184,17 @@ class TurnResult(BaseModel):
 
     @property
     def finished(self) -> bool:
+        """Whether the session has finished, i.e. no next question remains"""
         return self.next_question is None
 
 
 def _extract(state: InterviewState) -> InterviewState:
+    """Extract the CV text from the CV path into state"""
     return {"cv_text": extract_cv_text(Path(state["cv_path"]))}
 
 
 def _ask_level(state: InterviewState) -> InterviewState:
+    """Interrupt to ask for the target level when the role context has none set"""
     context = state["role_context"]
     if context.target_level is not None:
         return {}
@@ -172,17 +203,21 @@ def _ask_level(state: InterviewState) -> InterviewState:
 
 
 def _derive_emphasis(state: InterviewState) -> InterviewState:
+    """Derive the competency emphasis labels from the target level into state"""
     level = state["role_context"].target_level
     return {"emphasis": list(level_emphasis(level)) if level is not None else []}
 
 
 def _await_answer(state: InterviewState) -> InterviewState:
+    """Interrupt with the current prompt and store the resumed answer as pending"""
     prompt = state.get("redirect") or state["question"]
     answer = interrupt({"question": prompt})
     return {"pending_answer": str(answer)}
 
 
 class InterviewEngine:
+    """Stateful interview engine backed by a checkpointed LangGraph state machine."""
+
     def __init__(
         self,
         data_dir: Path,
@@ -376,6 +411,21 @@ class InterviewEngine:
         self._graph = graph.compile(checkpointer=checkpointer)
 
     def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
+        """Start a new interview session and run it up to the first interruption.
+
+        A new thread is created and recorded as the latest session.
+
+        Args:
+            cv_path: Path to the candidate's CV.
+            posting_text: Optional job posting text to build the role context and brief.
+
+        Returns:
+            A snapshot of the pending session.
+
+        Raises:
+            EngineError: If the started session is already finished or did not get far
+                enough to reopen.
+        """
         thread_id = uuid.uuid4().hex
         initial: InterviewState = {"cv_path": str(cv_path)}
         if posting_text is not None:
@@ -385,15 +435,52 @@ class InterviewEngine:
         return self._pending_session(thread_id)
 
     def resume_latest(self) -> SessionSnapshot:
+        """Return a pending snapshot of the most recent session.
+
+        Returns:
+            A snapshot of the latest pending session.
+
+        Raises:
+            EngineError: If there is no session to resume, it is already finished, or it
+                did not get far enough to reopen.
+        """
         return self._pending_session(self._latest_thread())
 
     def snapshot_latest(self) -> SessionSnapshot:
+        """Return a snapshot of the most recent session, finished or not.
+
+        Returns:
+            A snapshot of the latest session.
+
+        Raises:
+            EngineError: If there is no session, or it did not get far enough to reopen.
+        """
         return self._snapshot(self._latest_thread())
 
     def snapshot(self, thread_id: str) -> SessionSnapshot:
+        """Return a snapshot of a specific session.
+
+        Args:
+            thread_id: Identifier of the session's graph thread.
+
+        Returns:
+            A snapshot of the session.
+
+        Raises:
+            EngineError: If the session did not get far enough to reopen.
+        """
         return self._snapshot(thread_id)
 
     def list_sessions(self, limit: int | None = None, offset: int = 0) -> list[SessionListItem]:
+        """List stored sessions ordered from most to least recently checkpointed.
+
+        Args:
+            limit: Maximum number of sessions to return; None for no limit.
+            offset: Number of sessions to skip from the start of the ordering.
+
+        Returns:
+            Summary items for the matching sessions.
+        """
         rows = self._conn.execute(
             "SELECT thread_id FROM checkpoints "
             "GROUP BY thread_id ORDER BY MAX(checkpoint_id) DESC LIMIT ? OFFSET ?",
@@ -402,6 +489,7 @@ class InterviewEngine:
         return [self._session_item(thread_id) for (thread_id,) in rows]
 
     def _session_item(self, thread_id: str) -> SessionListItem:
+        """Build a summary list item from a session's checkpointed state"""
         state = self._graph.get_state(self._config(thread_id))
         role_context = state.values.get("role_context")
         return SessionListItem(
@@ -414,12 +502,26 @@ class InterviewEngine:
         )
 
     def _latest_thread(self) -> str:
+        """Read the latest session's thread id, raising if no session has been recorded"""
         latest = self._data_dir / "latest"
         if not latest.exists():
             raise EngineError("No session to resume. Start one with: sotellme interview")
         return latest.read_text().strip()
 
     def submit_level(self, thread_id: str, level: TargetLevel) -> SessionSnapshot:
+        """Supply the target level to a session waiting for it and advance the graph.
+
+        Args:
+            thread_id: Identifier of the session's graph thread.
+            level: The target level to apply.
+
+        Returns:
+            A snapshot of the pending session after advancing.
+
+        Raises:
+            EngineError: If the level is not a recognized target level, or the resulting
+                session is already finished or did not get far enough to reopen.
+        """
         if level not in get_args(TargetLevel):
             valid = ", ".join(get_args(TargetLevel))
             raise EngineError(f"Unknown level {level!r}: choose one of {valid}.")
@@ -427,6 +529,16 @@ class InterviewEngine:
         return self._pending_session(thread_id)
 
     def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
+        """Submit an answer to a session and advance to the next question or the end.
+
+        Args:
+            thread_id: Identifier of the session's graph thread.
+            answer: The candidate's answer to the current question.
+
+        Returns:
+            The turn result: the next question (or redirect) when more remains, otherwise
+            the closing remark, grade, and coaching report.
+        """
         self._graph.invoke(Command(resume=answer), self._config(thread_id))
         state = self._graph.get_state(self._config(thread_id))
         if state.next:
@@ -444,6 +556,22 @@ class InterviewEngine:
         )
 
     def replay_from(self, thread_id: str, node: str = "grade") -> TurnResult:
+        """Re-run a finished session from the checkpoint just before a given node.
+
+        Finds the most recent checkpoint whose next step includes the node, forks from it
+        with the engine's callbacks, and re-runs to completion. Useful for re-grading or
+        re-coaching a stored session.
+
+        Args:
+            thread_id: Identifier of the session's graph thread.
+            node: The graph node to replay from; defaults to the grade node.
+
+        Returns:
+            The turn result after replaying to completion.
+
+        Raises:
+            EngineError: If the session has no checkpoint before the given node.
+        """
         fork = next(
             (
                 snapshot
@@ -470,15 +598,23 @@ class InterviewEngine:
 
     @property
     def budget_callback(self) -> BudgetCallback:
+        """The callback tracking token usage and budget across the session."""
         return self._budget_callback
 
     def session_usage(self) -> dict[str, ModelUsage]:
+        """Return per-model token usage accumulated during the session.
+
+        Returns:
+            A mapping from model name to its recorded usage.
+        """
         return self._budget_callback.usage
 
     def close(self) -> None:
+        """Close the underlying checkpoint database connection"""
         self._conn.close()
 
     def __enter__(self) -> Self:
+        """Enter the context manager, returning this engine."""
         return self
 
     def __exit__(
@@ -487,18 +623,22 @@ class InterviewEngine:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        """Exit the context manager, closing the engine"""
         self.close()
 
     def _config(self, thread_id: str) -> RunnableConfig:
+        """Build the runnable config binding a thread id and the engine's callbacks"""
         return {"configurable": {"thread_id": thread_id}, "callbacks": self._callbacks}
 
     def _pending_session(self, thread_id: str) -> SessionSnapshot:
+        """Snapshot a session, raising if it is already finished"""
         snapshot = self._snapshot(thread_id)
         if snapshot.finished:
             raise EngineError("The last session is already finished. Start a new one.")
         return snapshot
 
     def _snapshot(self, thread_id: str) -> SessionSnapshot:
+        """Build a session snapshot from a thread's checkpointed graph state"""
         state = self._graph.get_state(self._config(thread_id))
         values = state.values
         if "profile" not in values:

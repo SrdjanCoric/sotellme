@@ -1,3 +1,5 @@
+"""Fetch and extract readable text from job postings and research web pages."""
+
 import html
 import ipaddress
 import json
@@ -23,10 +25,14 @@ _LD_JSON_TYPE = "application/ld+json"
 
 
 class PostingFetchError(Exception):
+    """Raised when a job posting cannot be fetched or yields no readable text."""
+
     pass
 
 
 class _VisibleTextExtractor(HTMLParser):
+    """Collect visible text chunks and ld+json blocks while parsing HTML."""
+
     def __init__(self) -> None:
         super().__init__()
         self.chunks: list[str] = []
@@ -54,6 +60,7 @@ class _VisibleTextExtractor(HTMLParser):
 
 
 def _parse_page(markup: str) -> _VisibleTextExtractor:
+    """Parse markup and return the extractor holding its visible text and ld+json blocks."""
     extractor = _VisibleTextExtractor()
     extractor.feed(markup)
     extractor.close()
@@ -61,10 +68,21 @@ def _parse_page(markup: str) -> _VisibleTextExtractor:
 
 
 def html_to_text(markup: str) -> str:
+    """Extract visible text from HTML markup.
+
+    Text inside script, style, noscript, head, and template elements is dropped.
+
+    Args:
+        markup: The HTML source to extract from.
+
+    Returns:
+        The visible text with one chunk per line.
+    """
     return "\n".join(_parse_page(markup).chunks)
 
 
 def _ld_json_candidates(block: str) -> list[dict[str, Any]]:
+    """Parse an ld+json block into candidate dicts, including any @graph entries."""
     try:
         data = json.loads(block)
     except json.JSONDecodeError:
@@ -81,6 +99,7 @@ def _ld_json_candidates(block: str) -> list[dict[str, Any]]:
 
 
 def _job_posting_text(page: _VisibleTextExtractor) -> str:
+    """Build posting text from the first JobPosting found in the page's ld+json blocks."""
     for block in page.ld_json_blocks:
         for candidate in _ld_json_candidates(block):
             if candidate.get("@type") != "JobPosting":
@@ -99,6 +118,7 @@ def _job_posting_text(page: _VisibleTextExtractor) -> str:
 
 
 def _normalize_url(value: str) -> str:
+    """Trim a URL and prefix ``https://`` when it starts with ``www.``."""
     url = value.strip()
     if url.lower().startswith("www."):
         url = f"https://{url}"
@@ -109,6 +129,7 @@ _WORKABLE_JOB_PATH = re.compile(r"^/([^/]+)/j/([A-Za-z0-9]+)/?$")
 
 
 def _workable_api_url(url: str) -> str | None:
+    """Return the Workable JSON API URL for a job page, or None if it is not one."""
     parts = urlsplit(url)
     if (parts.hostname or "").lower() != "apply.workable.com":
         return None
@@ -120,6 +141,7 @@ def _workable_api_url(url: str) -> str | None:
 
 
 def _workable_posting_text(body: str) -> str:
+    """Build posting text from a Workable API JSON body's title and HTML fields."""
     try:
         job = json.loads(body)
     except json.JSONDecodeError:
@@ -139,6 +161,7 @@ def _download(
     transport: httpx.BaseTransport | None,
     request_hook: Callable[[httpx.Request], None] | None = None,
 ) -> tuple[str, str]:
+    """Stream a URL and return its decoded body and content type."""
     event_hooks = {"request": [request_hook]} if request_hook else {}
     with (
         httpx.Client(
@@ -163,6 +186,23 @@ def _download(
 
 
 def fetch_posting_text(value: str, transport: httpx.BaseTransport | None = None) -> str:
+    """Fetch a job posting link and return its readable text.
+
+    Workable job links are read through the Workable JSON API; HTML pages prefer the
+    JobPosting ld+json data and fall back to visible text; other content types are returned
+    as-is.
+
+    Args:
+        value: The posting URL, possibly missing a scheme.
+        transport: Optional httpx transport, mainly for testing.
+
+    Returns:
+        The posting text.
+
+    Raises:
+        PostingFetchError: If the link errors, is invalid, exceeds the size limit, or yields
+            no readable text.
+    """
     url = _normalize_url(value)
     try:
         api_url = _workable_api_url(url)
@@ -193,10 +233,13 @@ def fetch_posting_text(value: str, transport: httpx.BaseTransport | None = None)
 
 
 class ResearchFetchError(Exception):
+    """Raised when a research page cannot be fetched safely or yields no readable text."""
+
     pass
 
 
 def _refuse_unsafe_host(url: httpx.URL) -> None:
+    """Raise ResearchFetchError for non-http(s), hostless, localhost, or private-IP URLs."""
     if url.scheme not in ("http", "https"):
         raise ResearchFetchError(f"Fetching {url.scheme!r} links is refused.")
     host = url.host
@@ -213,6 +256,24 @@ def _refuse_unsafe_host(url: httpx.URL) -> None:
 
 
 def fetch_research_page(url: str, transport: httpx.BaseTransport | None = None) -> str:
+    """Fetch a research page safely and return its readable text, length-capped.
+
+    The host is checked before the request and on every redirect hop to refuse unsafe targets.
+    HTML bodies are reduced to visible text; other content types are returned as-is. The
+    result is truncated to the maximum page length.
+
+    Args:
+        url: The page URL to fetch.
+        transport: Optional httpx transport, mainly for testing.
+
+    Returns:
+        The page text, truncated to the maximum page length.
+
+    Raises:
+        ResearchFetchError: If the host is unsafe, the request errors, the link is invalid, or
+            the page yields no readable text.
+    """
+
     def check_each_hop(request: httpx.Request) -> None:
         _refuse_unsafe_host(request.url)
 

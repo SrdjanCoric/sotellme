@@ -35,6 +35,8 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.coverage
+.coverage.*
 dist/
 
 # Local data (real CVs, session artifacts — PII, never committed)

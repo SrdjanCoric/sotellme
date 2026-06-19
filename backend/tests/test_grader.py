@@ -4,14 +4,14 @@ from pydantic import ValidationError
 from stubs import StubChatModel
 
 from sotellme.assessor import StarFlags
-from sotellme.eval_datasets import disagreements
+from sotellme.eval_datasets import ExpectedAnswer, disagreements
 from sotellme.grader import AnswerScore, GradingError, SessionGrade, grade_session
 from sotellme.interviewer import Turn
 
 _STAR_NAMES = ("situation", "task", "action", "result", "quantified_result")
 
 
-def _expected(star: tuple[bool, ...], weak: list[str]) -> dict[str, object]:
+def _expected(star: tuple[bool, ...], weak: list[str]) -> ExpectedAnswer:
     return {
         "star": dict(zip(_STAR_NAMES, star, strict=True)),
         "specificity": "high",

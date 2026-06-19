@@ -1,3 +1,5 @@
+"""Token-usage cost estimation and reporting for interview sessions."""
+
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -24,6 +26,8 @@ TYPICAL_TURNS = 12
 
 @dataclass(frozen=True)
 class CostEstimate:
+    """Up-front cost estimate for a session of an expected length."""
+
     model: str
     expected_turns: int
     input_tokens: int
@@ -33,6 +37,8 @@ class CostEstimate:
 
 @dataclass(frozen=True)
 class ModelUsage:
+    """Actual token counts recorded for a single model."""
+
     input_tokens: int
     output_tokens: int
     cached_input_tokens: int = 0
@@ -40,6 +46,8 @@ class ModelUsage:
 
 @dataclass(frozen=True)
 class ModelCost:
+    """Computed cost for a single model's recorded usage."""
+
     model: str
     input_tokens: int
     output_tokens: int
@@ -49,6 +57,8 @@ class ModelCost:
 
 @dataclass(frozen=True)
 class CostSummary:
+    """Aggregated cost across every model used in a session."""
+
     per_model: tuple[ModelCost, ...]
     total_tokens: int
     usd: float
@@ -61,6 +71,7 @@ def cost_usd(
     output_tokens: int,
     cached_input_tokens: int = 0,
 ) -> float:
+    """Compute the dollar cost of a single model call from its token counts."""
     uncached_input = max(0, input_tokens - cached_input_tokens)
     return (
         uncached_input * price.input
@@ -70,6 +81,7 @@ def cost_usd(
 
 
 def expected_session_tokens(expected_turns: int) -> tuple[int, int]:
+    """Estimate the input and output token totals for a session of a given length."""
     input_tokens = (
         SETUP_INPUT_TOKENS + expected_turns * PER_TURN_INPUT_TOKENS + FEEDBACK_INPUT_TOKENS
     )
@@ -84,6 +96,16 @@ def estimate_session_cost(
     expected_turns: int,
     prices: Mapping[str, ModelPrice] | None = None,
 ) -> CostEstimate:
+    """Build an up-front cost estimate for a session of an expected length.
+
+    Args:
+        model: Model identifier to price the estimate for.
+        expected_turns: Number of question turns to assume.
+        prices: Per-model price table; the default catalog's prices are used when None.
+
+    Returns:
+        A CostEstimate whose usd is None when the model has no configured price.
+    """
     if prices is None:
         prices = default_catalog().prices
     input_tokens, output_tokens = expected_session_tokens(expected_turns)
@@ -100,6 +122,7 @@ def estimate_session_cost(
 def summarize_actual_cost(
     usage: Mapping[str, ModelUsage], prices: Mapping[str, ModelPrice]
 ) -> CostSummary:
+    """Summarize the actual cost of a session from recorded per-model usage."""
     per_model: list[ModelCost] = []
     total_tokens = 0
     usd = 0.0
@@ -132,6 +155,7 @@ def summarize_actual_cost(
 
 
 def format_cost_summary(summary: CostSummary) -> str:
+    """Render a cost summary as a human-readable multi-line string."""
     lines = [
         f"Tokens used: {summary.total_tokens:,} · estimated cost: ${summary.usd:.2f} (estimate)."
     ]
