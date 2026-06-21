@@ -1,9 +1,13 @@
+from voice import voice_tells
+
 from sotellme.prompts import (
     CLOSING_EXAMPLES,
+    COACH_EXAMPLES,
     HOUSE_VOICE,
     STYLE_EXAMPLES,
     assessor_messages,
     closing_messages,
+    coach_messages,
     director_messages,
     grader_messages,
     profile_extraction_messages,
@@ -461,3 +465,23 @@ def test_closing_prompt_frames_the_transcript_as_data_not_instructions() -> None
 
     assert "data" in system_text.lower()
     assert "not instructions" in system_text.lower()
+
+
+def test_coach_prompt_carries_style_examples_as_a_positive_anchor() -> None:
+    system_text = dict(coach_messages("senior", "Q: q\nA: a", "grade"))["system"]
+
+    assert "<style_examples>" in system_text
+    for example in COACH_EXAMPLES:
+        assert example in system_text
+
+
+def test_coach_examples_carry_placeholders_and_no_digits() -> None:
+    assert len(COACH_EXAMPLES) >= 2
+    assert sum(1 for example in COACH_EXAMPLES if "[" in example and "]" in example) >= 3
+    for example in COACH_EXAMPLES:
+        assert not any(ch.isdigit() for ch in example), f"example has a number: {example!r}"
+
+
+def test_coach_examples_are_clean_of_voice_tells() -> None:
+    for example in COACH_EXAMPLES:
+        assert voice_tells(example) == [], example
