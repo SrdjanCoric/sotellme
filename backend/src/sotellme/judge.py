@@ -24,22 +24,51 @@ class DimensionVerdict(BaseModel):
 
 
 class QuestionVerdict(BaseModel):
-    """Per-dimension and overall verdict on a single interviewer question."""
+    """Per-dimension and overall verdict on a single interviewer question.
 
-    relevance: DimensionVerdict = Field(
-        description="Does the question target the competency in play?"
+    Flat scalar fields keep the tool-call schema shallow so Anthropic structured output
+    stays reliable; five identically-shaped nested sub-objects collapse in practice. Each
+    dimension keeps its rationale before its score, and the ``dimensions`` property
+    reassembles ``DimensionVerdict`` values so downstream consumers are untouched.
+    """
+
+    relevance_rationale: str = Field(
+        description="Why the relevance score, written before the score is chosen."
     )
-    probes_the_flagged_gap: DimensionVerdict = Field(
-        description="Does it chase the specific flagged gap rather than a generic question?"
+    relevance_score: int = Field(
+        ge=1, le=5, description="Does the question target the competency in play? 1 (poor)-5."
     )
-    level_appropriateness: DimensionVerdict = Field(
-        description="Is the depth right for the target level (neither over- nor under-shooting)?"
+    probes_the_flagged_gap_rationale: str = Field(
+        description="Why the probes-the-flagged-gap score, written before the score."
     )
-    non_leading: DimensionVerdict = Field(
-        description="Does it avoid handing over the answer or presupposing a conclusion?"
+    probes_the_flagged_gap_score: int = Field(
+        ge=1,
+        le=5,
+        description="Does it chase the specific flagged gap rather than a generic question? 1-5.",
     )
-    follow_up_discipline: DimensionVerdict = Field(
-        description="Was probing again vs moving on the right call given the evidence at the time?"
+    level_appropriateness_rationale: str = Field(
+        description="Why the level-appropriateness score, written before the score."
+    )
+    level_appropriateness_score: int = Field(
+        ge=1,
+        le=5,
+        description="Is the depth right for the target level (no over- or under-shoot)? 1-5.",
+    )
+    non_leading_rationale: str = Field(
+        description="Why the non-leading score, written before the score."
+    )
+    non_leading_score: int = Field(
+        ge=1,
+        le=5,
+        description="Does it avoid handing over the answer or presupposing a conclusion? 1-5.",
+    )
+    follow_up_discipline_rationale: str = Field(
+        description="Why the follow-up-discipline score, written before the score."
+    )
+    follow_up_discipline_score: int = Field(
+        ge=1,
+        le=5,
+        description="Was probing again vs moving on the right call given the evidence then? 1-5.",
     )
     overall_rationale: str = Field(
         description="Why the overall verdict, drawn from the dimensions."
@@ -48,13 +77,26 @@ class QuestionVerdict(BaseModel):
 
     @property
     def dimensions(self) -> dict[str, DimensionVerdict]:
-        """Map each scored dimension name to its verdict."""
+        """Reassemble each scored dimension from its flat rationale/score pair."""
         return {
-            "relevance": self.relevance,
-            "probes_the_flagged_gap": self.probes_the_flagged_gap,
-            "level_appropriateness": self.level_appropriateness,
-            "non_leading": self.non_leading,
-            "follow_up_discipline": self.follow_up_discipline,
+            "relevance": DimensionVerdict(
+                rationale=self.relevance_rationale, score=self.relevance_score
+            ),
+            "probes_the_flagged_gap": DimensionVerdict(
+                rationale=self.probes_the_flagged_gap_rationale,
+                score=self.probes_the_flagged_gap_score,
+            ),
+            "level_appropriateness": DimensionVerdict(
+                rationale=self.level_appropriateness_rationale,
+                score=self.level_appropriateness_score,
+            ),
+            "non_leading": DimensionVerdict(
+                rationale=self.non_leading_rationale, score=self.non_leading_score
+            ),
+            "follow_up_discipline": DimensionVerdict(
+                rationale=self.follow_up_discipline_rationale,
+                score=self.follow_up_discipline_score,
+            ),
         }
 
 
@@ -91,10 +133,23 @@ class QuestionContext:
 class JudgeError(Exception):
     """Raised when a question or coverage judgment cannot be produced."""
 
-    pass
+    def diagnostic(self) -> str:
+        """Describe this failure with its chained cause so a run is diagnosable.
+
+        The bare message is generic, and a wrapper that reduces a raised exception to its
+        message (e.g. Langfuse's ``run_experiment``) hides the real
+        ``ValidationError``/``OutputParserException``. Folding the chained ``__cause__``
+        into the message keeps the failure diagnosable from the run output alone.
+        """
+        cause = self.__cause__
+        if cause is None:
+            return str(self)
+        return f"{self} (caused by {type(cause).__name__}: {cause})"
 
 
 _FAILURE_MESSAGE = "Could not judge the question."
+
+_JUDGE_RETRY_ATTEMPTS = 3
 
 
 class QuestionJudge:
@@ -108,7 +163,8 @@ class QuestionJudge:
         """Judge one interviewer question against its context.
 
         Renders the context into the question-judge prompt, caches the system prompt
-        for the provider, and invokes the model with structured output.
+        for the provider, and invokes the model with structured output, retrying on
+        validation or parsing failures.
 
         Args:
             context: The question and its surrounding context to judge.
@@ -120,7 +176,11 @@ class QuestionJudge:
             JudgeError: If the model output fails validation or parsing, or is not a
                 QuestionVerdict.
         """
-        structured = self._model.with_structured_output(QuestionVerdict)
+        structured = self._model.with_structured_output(QuestionVerdict).with_retry(
+            retry_if_exception_type=(ValidationError, OutputParserException),
+            wait_exponential_jitter=False,
+            stop_after_attempt=_JUDGE_RETRY_ATTEMPTS,
+        )
         try:
             messages = cache_system_prompt(
                 question_judge_messages(
@@ -148,7 +208,7 @@ class QuestionJudge:
 
         Renders the target level, its emphasis, and the transcript into the
         coverage-judge prompt, caches the system prompt for the provider, and invokes
-        the model with structured output.
+        the model with structured output, retrying on validation or parsing failures.
 
         Args:
             target_level: The seniority level whose competencies are judged.
@@ -161,7 +221,11 @@ class QuestionJudge:
             JudgeError: If the model output fails validation or parsing, or is not a
                 CoverageVerdict.
         """
-        structured = self._model.with_structured_output(CoverageVerdict)
+        structured = self._model.with_structured_output(CoverageVerdict).with_retry(
+            retry_if_exception_type=(ValidationError, OutputParserException),
+            wait_exponential_jitter=False,
+            stop_after_attempt=_JUDGE_RETRY_ATTEMPTS,
+        )
         try:
             messages = cache_system_prompt(
                 coverage_judge_messages(

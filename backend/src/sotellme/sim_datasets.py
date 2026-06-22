@@ -18,7 +18,7 @@ from sotellme.budget import BudgetCallback
 from sotellme.catalog import ModelPrice
 from sotellme.config import ModelConfig, build_chat_model
 from sotellme.eval_datasets import apply_limit, langfuse_client
-from sotellme.judge import QuestionJudge
+from sotellme.judge import JudgeError, QuestionJudge
 from sotellme.personas import AnswerBehavior, Persona
 from sotellme.pricing import format_cost_summary, summarize_actual_cost
 from sotellme.role import TargetLevel
@@ -164,7 +164,10 @@ def run_simulation_experiment(
             persona, simulator, config, callbacks, data_dir, cv_dir, max_turns
         )
         write_session_artifact(session, artifacts_dir)
-        judgement = judge_session(judge, session)
+        try:
+            judgement = judge_session(judge, session)
+        except JudgeError as exc:
+            raise JudgeError(exc.diagnostic()) from exc
         return {"session": session.model_dump(), "judgement": judgement.model_dump()}
 
     def evaluator(*, output: Any, **_: Any) -> list[Evaluation]:
