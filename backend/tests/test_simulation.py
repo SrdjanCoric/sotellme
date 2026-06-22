@@ -12,7 +12,6 @@ from sotellme.interviewer import Turn
 from sotellme.judge import (
     CompetencyCoverage,
     CoverageVerdict,
-    DimensionVerdict,
     QuestionContext,
     QuestionVerdict,
 )
@@ -338,13 +337,17 @@ class StubJudge:
 
 
 def _question_verdict(score: int) -> QuestionVerdict:
-    dim = DimensionVerdict(rationale="r", score=score)
     return QuestionVerdict(
-        relevance=dim,
-        probes_the_flagged_gap=dim,
-        level_appropriateness=dim,
-        non_leading=dim,
-        follow_up_discipline=dim,
+        relevance_rationale="r",
+        relevance_score=score,
+        probes_the_flagged_gap_rationale="r",
+        probes_the_flagged_gap_score=score,
+        level_appropriateness_rationale="r",
+        level_appropriateness_score=score,
+        non_leading_rationale="r",
+        non_leading_score=score,
+        follow_up_discipline_rationale="r",
+        follow_up_discipline_score=score,
         overall_rationale="ok",
         overall="good",
     )
