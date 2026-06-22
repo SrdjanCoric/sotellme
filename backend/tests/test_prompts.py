@@ -239,6 +239,14 @@ def test_director_prompt_holds_segments_as_guidance_not_a_script() -> None:
     assert "why this company" in system_text
 
 
+def test_director_prompt_opens_broad_on_the_very_first_turn() -> None:
+    system_text = director_test_messages()["system"].lower()
+
+    assert "very first turn" in system_text
+    assert "broad opener is always the move" in system_text
+    assert "never a narrow probe" in system_text
+
+
 def test_director_prompt_carries_company_type_guidance() -> None:
     system_text = director_test_messages()["system"].lower()
 
