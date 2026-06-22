@@ -24,7 +24,7 @@ from sotellme.cli import (
 from sotellme.coach import CoachReport
 from sotellme.config import AGENT_ROLES, resolve_model_config
 from sotellme.engine import SessionSnapshot, TurnResult
-from sotellme.grader import AnswerScore, SessionGrade
+from sotellme.grader import AnswerScore, SessionGrade, SkippedTurn
 from sotellme.guardrail import GuardrailError
 from sotellme.interviewer import Turn
 from sotellme.pricing import CostEstimate, CostSummary, ModelCost, format_cost_summary
@@ -38,10 +38,12 @@ def score(
     gap: str = "",
     ownership: str = "clear",
     value: int = 5,
+    turn_index: int = 1,
 ) -> AnswerScore:
     resolved_gap = "" if value == 5 else (gap or "One refinement short of a five.")
     return AnswerScore(
         question=question,
+        turn_index=turn_index,
         star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
         specificity="high",
         ownership=ownership,  # type: ignore[arg-type]
@@ -262,6 +264,42 @@ def test_score_summary_lists_each_answer_with_its_score_and_named_gaps() -> None
     assert "5/5" in summary
     assert "result" in summary
     assert "No outcome stated." in summary
+
+
+def test_score_summary_labels_each_scored_answer_with_its_turn_number() -> None:
+    grade = SessionGrade(
+        scores=[
+            score("Tell me about the migration.", value=5, turn_index=1),
+            score("What kept its integrity?", value=4, turn_index=3),
+        ],
+        skipped=[
+            SkippedTurn(turn_index=2, question="First or second?", reason="Clarifying question.")
+        ],
+    )
+
+    summary = format_score_summary(grade)
+
+    assert "turn 1:" in summary
+    assert "turn 3:" in summary
+
+
+def test_score_summary_lists_skipped_clarifying_turns_with_their_reason() -> None:
+    grade = SessionGrade(
+        scores=[score("Tell me about the migration.", value=4, turn_index=1)],
+        skipped=[
+            SkippedTurn(
+                turn_index=2,
+                question="Did you mean the first migration or the second?",
+                reason="Clarifying question; no STAR substance to score.",
+            )
+        ],
+    )
+
+    summary = format_score_summary(grade)
+
+    assert "Skipped" in summary
+    assert "turn 2" in summary
+    assert "Clarifying question; no STAR substance to score." in summary
 
 
 def test_score_summary_omits_ownership_when_not_applicable() -> None:

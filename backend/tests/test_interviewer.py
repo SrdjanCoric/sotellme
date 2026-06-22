@@ -42,6 +42,19 @@ def test_transcript_renders_as_question_answer_turns() -> None:
     assert render_transcript(transcript) == "Q: What happened?\nA: We migrated."
 
 
+def test_transcript_numbers_turns_when_requested() -> None:
+    transcript = [
+        Turn(question="What happened?", answer="We migrated."),
+        Turn(question="Which one?", answer="The second."),
+    ]
+
+    rendered = render_transcript(transcript, numbered=True)
+
+    assert rendered == (
+        "Turn 1\nQ: What happened?\nA: We migrated.\n\nTurn 2\nQ: Which one?\nA: The second."
+    )
+
+
 def test_role_context_renders_without_the_target_level() -> None:
     context = RoleContext(
         company="Acme",

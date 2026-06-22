@@ -170,6 +170,7 @@ GRADE = SessionGrade(
     scores=[
         AnswerScore(
             question="Question 1 about their background.",
+            turn_index=1,
             star=StarFlags(
                 situation=True, task=True, action=True, result=True, quantified_result=True
             ),

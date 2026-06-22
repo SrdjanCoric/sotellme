@@ -3,7 +3,7 @@ from langchain_core.messages import SystemMessage
 from stubs import StubChatModel
 
 from sotellme.caching import MIN_CACHEABLE_CHARS, cache_system_prompt
-from sotellme.grader import SessionGrade, grade_session
+from sotellme.grader import SessionGrade, SkippedTurn, grade_session
 from sotellme.interviewer import Turn
 from sotellme.prompts import (
     GRADER_SYSTEM_PROMPT,
@@ -116,7 +116,12 @@ def test_per_case_content_is_left_uncached() -> None:
 
 
 def test_an_anthropic_agent_sends_a_cache_controlled_system_prompt() -> None:
-    stub = StubChatModel(structured_response=SessionGrade(scores=[]))
+    stub = StubChatModel(
+        structured_response=SessionGrade(
+            scores=[],
+            skipped=[SkippedTurn(turn_index=1, question="q", reason="Clarifying reply.")],
+        )
+    )
 
     grade_session([Turn(question="q", answer="a")], "senior", stub, provider="anthropic")
 
@@ -125,7 +130,12 @@ def test_an_anthropic_agent_sends_a_cache_controlled_system_prompt() -> None:
 
 
 def test_an_agent_without_a_provider_sends_a_plain_system_prompt() -> None:
-    stub = StubChatModel(structured_response=SessionGrade(scores=[]))
+    stub = StubChatModel(
+        structured_response=SessionGrade(
+            scores=[],
+            skipped=[SkippedTurn(turn_index=1, question="q", reason="Clarifying reply.")],
+        )
+    )
 
     grade_session([Turn(question="q", answer="a")], "senior", stub)
 

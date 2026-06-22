@@ -91,6 +91,22 @@ def test_grader_prompt_grades_non_star_answers_on_their_own_terms() -> None:
     assert "names only elements a story of that kind should have" in system_text
 
 
+def test_grader_prompt_skips_clarifying_questions_and_anchors_each_score_to_a_turn() -> None:
+    system_text = dict(grader_messages("mid", "transcript")).get("system", "").lower()
+
+    assert "set turn_index to that turn's number" in system_text
+    assert "pure clarifying or confirmation question" in system_text
+    assert "record it in skipped" in system_text
+    assert "appears exactly once" in system_text
+
+
+def test_grader_prompt_still_scores_a_substantive_question_ducked_with_a_bare_yes() -> None:
+    system_text = dict(grader_messages("mid", "transcript")).get("system", "").lower()
+
+    assert "the skip is about the question being a clarification" in system_text
+    assert "is still scored" in system_text
+
+
 def test_grader_prompt_defines_action_by_the_active_verb_rule() -> None:
     system_text = dict(grader_messages("senior", "transcript")).get("system", "").lower()
 

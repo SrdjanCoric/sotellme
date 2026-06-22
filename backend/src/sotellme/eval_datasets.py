@@ -85,6 +85,7 @@ class RoleExpectation(TypedDict, total=False):
 class TranscriptExpectation(TypedDict, total=False):
     senior_floor_turns: list[int]
     senior_ceiling_turns: list[int]
+    clarifying_turns: list[int]
 
 
 def apply_limit(items: Sequence[Any], limit: int | None) -> list[Any]:
@@ -190,14 +191,30 @@ def _role_failures(context: RoleContext, expect: RoleExpectation) -> list[str]:
 def _transcript_agreement(
     scores: Sequence[AnswerScore], expected: TranscriptExpectation
 ) -> EvalScore:
-    """Score whether a transcript's grades respect the senior floor and ceiling turns."""
-    too_low = [i for i in expected.get("senior_floor_turns", []) if scores[i - 1].score < 4]
-    too_high = [i for i in expected.get("senior_ceiling_turns", []) if scores[i - 1].score > 3]
+    """Score whether a transcript's grades respect the floor, ceiling, and skipped turns."""
+    turns_scored = [score.turn_index for score in scores]
+    by_turn = {score.turn_index: score for score in scores}
+    duplicates = sorted({turn for turn in turns_scored if turns_scored.count(turn) > 1})
+    too_low = [
+        i
+        for i in expected.get("senior_floor_turns", [])
+        if i not in by_turn or by_turn[i].score < 4
+    ]
+    too_high = [
+        i
+        for i in expected.get("senior_ceiling_turns", [])
+        if i not in by_turn or by_turn[i].score > 3
+    ]
+    scored_clarifying = [i for i in expected.get("clarifying_turns", []) if i in by_turn]
     parts = []
+    if duplicates:
+        parts.append(f"duplicate scores for turns {duplicates}")
     if too_low:
-        parts.append(f"under-levelled at turns {too_low}")
+        parts.append(f"under-leveled or unscored at turns {too_low}")
     if too_high:
-        parts.append(f"over-levelled at turns {too_high}")
+        parts.append(f"over-leveled or unscored at turns {too_high}")
+    if scored_clarifying:
+        parts.append(f"scored clarifying turns that should be skipped {scored_clarifying}")
     return EvalScore(
         name="grader_agreement",
         value=0.0 if parts else 1.0,
@@ -274,6 +291,7 @@ class GraderEval(AgentEval):
         return {
             "senior_floor_turns": case.get("senior_floor_turns", []),
             "senior_ceiling_turns": case.get("senior_ceiling_turns", []),
+            "clarifying_turns": case.get("clarifying_turns", []),
         }
 
     def to_metadata(self, case: dict[str, Any]) -> dict[str, Any]:

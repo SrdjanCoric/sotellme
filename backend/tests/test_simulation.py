@@ -385,6 +385,7 @@ def _grade(score: int) -> SessionGrade:
         scores=[
             AnswerScore(
                 question="Q1",
+                turn_index=1,
                 star=StarFlags(
                     situation=True, task=True, action=True, result=True, quantified_result=True
                 ),

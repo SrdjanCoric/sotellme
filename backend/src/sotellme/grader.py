@@ -1,10 +1,11 @@
 """Grade an interview transcript answer by answer at the candidate's target level."""
 
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from sotellme.assessor import StarFlags
@@ -21,6 +22,10 @@ class AnswerScore(BaseModel):
 
     question: str = Field(
         description="The interviewer question this answer responds to, quoted near-verbatim."
+    )
+    turn_index: int = Field(
+        ge=1,
+        description="The 1-based transcript turn ('Turn N') this answer is scored from.",
     )
     rationale: str = Field(
         description=(
@@ -43,7 +48,7 @@ class AnswerScore(BaseModel):
             "How clearly the answer separates what the candidate personally did ('I') "
             "from what the team did ('we'). Reads only the I-vs-we line, never how strong "
             "or specific the answer is. 'not_applicable' when the answer claims no personal "
-            "action at all, such as a motivation answer or a short clarifying reply."
+            "action at all, such as a motivation answer."
         )
     )
     weak_or_missing: list[StarElement] = Field(
@@ -79,11 +84,36 @@ class AnswerScore(BaseModel):
         return self
 
 
+class SkippedTurn(BaseModel):
+    """A transcript turn left unscored because it was not a STAR-gradeable answer."""
+
+    turn_index: int = Field(
+        ge=1, description="The 1-based transcript turn ('Turn N') that was not scored."
+    )
+    question: str = Field(
+        description="The interviewer question for this turn, quoted near-verbatim."
+    )
+    reason: str = Field(
+        description=(
+            "One plain phrase saying why this turn was not scored, such as a clarifying or "
+            "confirmation question with no STAR substance to grade."
+        )
+    )
+
+
 class SessionGrade(BaseModel):
-    """Grades for every answer in a session, in transcript order."""
+    """Grades for every scored answer in a session, plus the turns left unscored."""
 
     scores: list[AnswerScore] = Field(
-        description="One score per answer the candidate gave, in transcript order."
+        description="One score per substantive answer the candidate gave, in transcript order."
+    )
+    skipped: list[SkippedTurn] = Field(
+        default_factory=list,
+        description=(
+            "Turns left unscored because they were not STAR-gradeable answers - a clarifying "
+            "or confirmation question the candidate simply answered. Every transcript turn "
+            "appears exactly once across scores and skipped."
+        ),
     )
 
 
@@ -97,6 +127,22 @@ _GRADE_FAILURE_MESSAGE = "Could not grade the session. The interview may be too 
 
 
 _GRADE_RETRY_ATTEMPTS = 3
+
+
+def _require_full_turn_coverage(grade: SessionGrade, turn_count: int) -> SessionGrade:
+    """Verify every transcript turn is scored or skipped exactly once.
+
+    Raised as an OutputParserException so the structured-output retry re-runs the grader
+    rather than letting a grade that drops or double-counts a turn slip through.
+    """
+    covered = sorted(
+        [score.turn_index for score in grade.scores] + [skip.turn_index for skip in grade.skipped]
+    )
+    if covered != list(range(1, turn_count + 1)):
+        raise OutputParserException(
+            f"grade must cover turns 1..{turn_count} exactly once, got {covered}"
+        )
+    return grade
 
 
 def grade_session(
@@ -124,13 +170,22 @@ def grade_session(
         GradingError: If the model output fails validation or parsing across all
             retries, or is not a SessionGrade.
     """
-    structured = model.with_structured_output(SessionGrade).with_retry(
+
+    def _check_coverage(grade: dict[str, Any] | BaseModel) -> SessionGrade:
+        if not isinstance(grade, SessionGrade):
+            raise GradingError(_GRADE_FAILURE_MESSAGE)
+        return _require_full_turn_coverage(grade, len(transcript))
+
+    graded: Runnable[Any, SessionGrade] = model.with_structured_output(
+        SessionGrade
+    ) | RunnableLambda(_check_coverage)
+    structured = graded.with_retry(
         retry_if_exception_type=(ValidationError, OutputParserException),
         wait_exponential_jitter=False,
         stop_after_attempt=_GRADE_RETRY_ATTEMPTS,
     )
     messages = cache_system_prompt(
-        grader_messages(target_level, render_transcript(transcript)), provider
+        grader_messages(target_level, render_transcript(transcript, numbered=True)), provider
     )
     try:
         result = structured.invoke(messages)
