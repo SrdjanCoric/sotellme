@@ -87,8 +87,9 @@ hostile page or posting can talk the model into leaking it (`tests/test_fetch.py
 
 A cap on questions, a guaranteed closing question, a ceiling on web fetches, and a token
 budget that ends a long session early are all plain code, and they're unit-tested. The
-tool also screens what you type before it reaches the interview, so going off-topic nudges
-you back and a second off-topic reply in a row wraps the session up. Either way the real
+tool also screens what you type before it reaches the interview: trying to steer or
+manipulate the session ends it on the spot, while simply going off-topic nudges you back
+once and a second off-topic reply in a row wraps the session up. Either way the real
 answers you gave still get graded.
 
 ## Configuration
