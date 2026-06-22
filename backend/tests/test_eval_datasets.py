@@ -1,5 +1,6 @@
+import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sotellme.eval_datasets import (
     DEFAULT_LANGFUSE_TIMEOUT,
@@ -78,6 +79,59 @@ def test_grader_single_answer_case_maps_to_a_labelled_item() -> None:
     assert item.id == "sotellme-grader:complete-quantified-single-team-senior"
 
 
+def _grader_cases() -> list[dict[str, Any]]:
+    document = json.loads((EVALS_DIR / "grader_cases.json").read_text())
+    return cast(list[dict[str, Any]], document["cases"])
+
+
+def _single_answer_cases() -> list[dict[str, Any]]:
+    return [case for case in _grader_cases() if "proposed" in case]
+
+
+def _case_named(name: str) -> dict[str, Any]:
+    [case] = [case for case in _grader_cases() if case["name"] == name]
+    return case
+
+
+def test_committed_grader_cases_honor_the_gap_invariant() -> None:
+    for case in _single_answer_cases():
+        proposed = case["proposed"]
+        has_gap = bool(proposed.get("gap", "").strip())
+        assert has_gap == (proposed["score"] < 5), (
+            f"{case['name']}: a gap is non-empty exactly when the score is below 5"
+        )
+
+
+def test_under_leveled_senior_case_carries_a_visible_leveling_gap() -> None:
+    proposed = _case_named("complete-quantified-single-team-senior")["proposed"]
+
+    assert proposed["score"] == 4
+    assert proposed["gap"].strip()
+
+
+def test_grader_cases_pin_the_four_versus_three_boundary() -> None:
+    refinement = _case_named("complete-quantified-single-team-senior")["proposed"]
+    real_miss = _case_named("all-impact-no-difficulty-senior")["proposed"]
+
+    assert refinement["score"] == 4
+    assert real_miss["score"] == 3
+    assert refinement["gap"].strip() and real_miss["gap"].strip()
+
+
+def test_small_team_deference_case_is_not_docked_on_ownership() -> None:
+    proposed = _case_named("small-team-deference-owns-execution-senior")["proposed"]
+
+    assert proposed["ownership"] == "clear"
+    assert proposed["score"] >= 4
+
+
+def test_confidentiality_case_judges_specificity_on_what_was_described() -> None:
+    proposed = _case_named("confidentiality-declined-but-general-senior")["proposed"]
+
+    assert proposed["specificity"] in {"medium", "high"}
+    assert proposed["score"] >= 3
+
+
 def test_a_case_label_never_leaks_into_the_dataset_input() -> None:
     spec = dataset_specs()["grader"]
     case = {
@@ -108,7 +162,7 @@ def _answer_score(score: int, weak: list[str] | None = None) -> dict[str, Any]:
         "specificity": "high",
         "ownership": "clear",
         "weak_or_missing": weak or [],
-        "gap": "g",
+        "gap": "" if score == 5 else "g",
         "score": score,
     }
 

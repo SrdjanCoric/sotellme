@@ -39,13 +39,14 @@ def score(
     ownership: str = "clear",
     value: int = 5,
 ) -> AnswerScore:
+    resolved_gap = "" if value == 5 else (gap or "One refinement short of a five.")
     return AnswerScore(
         question=question,
         star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
         specificity="high",
         ownership=ownership,  # type: ignore[arg-type]
         weak_or_missing=weak_or_missing or [],  # type: ignore[arg-type]
-        gap=gap,
+        gap=resolved_gap,
         rationale="Complete, quantified story at the target level.",
         score=value,
     )
