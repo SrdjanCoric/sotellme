@@ -28,7 +28,7 @@ def _graded(star: tuple[bool, ...], weak: list[str]) -> AnswerScore:
         specificity="high",
         ownership="clear",
         weak_or_missing=weak,  # type: ignore[arg-type]
-        gap="",
+        gap="One refinement short of a five.",
         rationale="r",
         score=4,
     )
@@ -77,7 +77,7 @@ def test_answer_score_accepts_not_applicable_ownership() -> None:
         specificity="high",
         ownership="not_applicable",
         weak_or_missing=[],
-        gap="",
+        gap="Strong motivation, but it could name one concrete draw to the product.",
         rationale="Motivation answer; ownership does not apply with no personal action claimed.",
         score=4,
     )
@@ -95,9 +95,51 @@ def test_answer_score_requires_a_rationale() -> None:
             specificity="low",
             ownership="unclear",
             weak_or_missing=[],
-            gap="",
+            gap="No concrete substance to assess.",
             score=1,
         )
+
+
+def _scored(score: int, gap: str) -> AnswerScore:
+    return AnswerScore(
+        question="Tell me about the migration.",
+        star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
+        specificity="high",
+        ownership="clear",
+        weak_or_missing=[],
+        gap=gap,
+        rationale="A complete, quantified story, judged at the target level.",
+        score=score,
+    )
+
+
+def test_answer_score_rejects_an_empty_gap_below_a_five() -> None:
+    with pytest.raises(ValidationError):
+        _scored(4, "")
+
+
+def test_answer_score_rejects_a_gap_on_a_five() -> None:
+    with pytest.raises(ValidationError):
+        _scored(5, "Single-team scope, not the cross-org reach a 5 would show.")
+
+
+def test_answer_score_accepts_a_gap_below_a_five() -> None:
+    answer = _scored(4, "Single-team scope, not the cross-org reach a 5 would show.")
+
+    assert answer.score == 4
+    assert answer.gap
+
+
+def test_answer_score_accepts_an_empty_gap_on_a_five() -> None:
+    answer = _scored(5, "")
+
+    assert answer.score == 5
+    assert answer.gap == ""
+
+
+def test_answer_score_treats_a_whitespace_only_gap_as_empty() -> None:
+    with pytest.raises(ValidationError):
+        _scored(4, "   ")
 
 
 def test_grade_session_returns_the_models_structured_grade() -> None:

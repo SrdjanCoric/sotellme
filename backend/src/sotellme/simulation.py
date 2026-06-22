@@ -1,11 +1,12 @@
 """Drive, record, judge, and replay synthetic persona interview simulations."""
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:
     from langchain_core.callbacks import BaseCallbackHandler
@@ -519,13 +520,33 @@ def simulate_session(
     )
 
 
-def replay_skip_reason(session: SimulatedSession) -> str | None:
+def replay_skip_reason(thread_id: str | None, was_graded: bool, finished_reason: str) -> str | None:
     """Explain why a stored session cannot be replayed, if it cannot."""
-    if session.thread_id is None:
+    if thread_id is None:
         return "stored before replay support; re-run it to capture its checkpoint"
-    if session.grade is None:
-        return f"never reached grading ({session.finished_reason}); no checkpoint to fork"
+    if not was_graded:
+        return f"never reached grading ({finished_reason}); no checkpoint to fork"
     return None
+
+
+def _load_replayable(path: Path) -> tuple[SimulatedSession, SessionGrade | None, bool]:
+    """Load a stored session for replay, tolerating a grade an older grader produced.
+
+    Replay overwrites the grade, so a stored grade the current AnswerScore invariant
+    rejects must not block loading. The stale grade is dropped from the strict load and
+    best-effort decoded only for the before/after delta; a flag records that the session
+    was graded so the skip logic still forks it.
+    """
+    raw = json.loads(path.read_text())
+    stored_grade = raw.pop("grade", None)
+    session = SimulatedSession.model_validate(raw)
+    before: SessionGrade | None = None
+    if stored_grade is not None:
+        try:
+            before = SessionGrade.model_validate(stored_grade)
+        except ValidationError:
+            before = None
+    return session, before, stored_grade is not None
 
 
 def _mean_score(grade: SessionGrade | None) -> str:
@@ -580,13 +601,12 @@ def replay_sessions(
         if not path.exists():
             lines.append(f"skip {persona.name}: no stored session; run it first")
             continue
-        session = SimulatedSession.model_validate_json(path.read_text())
-        reason = replay_skip_reason(session)
+        session, before, was_graded = _load_replayable(path)
+        reason = replay_skip_reason(session.thread_id, was_graded, session.finished_reason)
         if reason is not None:
             lines.append(f"skip {persona.name}: {reason}")
             continue
         assert session.thread_id is not None
-        before = session.grade
         result = engine.replay_from(session.thread_id, stage)
         session.grade = result.grade
         session.coach = result.coach

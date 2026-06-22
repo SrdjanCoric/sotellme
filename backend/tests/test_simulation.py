@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -390,7 +391,7 @@ def _grade(score: int) -> SessionGrade:
                 specificity="high",
                 ownership="clear",
                 weak_or_missing=[],
-                gap="",
+                gap="" if score == 5 else "One refinement short of a five.",
                 rationale="r",
                 score=score,
             )
@@ -450,6 +451,31 @@ def test_replay_sessions_regrades_stored_sessions_and_skips_the_ungradable(tmp_p
     assert "junior-thin" in report and "never reached grading" in report
     assert "mid-pre" in report and "replay support" in report
     assert "staff-missing" in report and "no stored session" in report
+
+
+def test_replay_tolerates_a_stored_grade_the_current_invariant_rejects(tmp_path: Path) -> None:
+    artifacts = tmp_path / "sessions"
+    write_session_artifact(
+        SimulatedSession(
+            persona="senior-strong", target_level="senior", thread_id="t1", grade=_grade(4)
+        ),
+        artifacts,
+    )
+    # Rewrite the stored grade into one an older grader produced: a sub-5 with an empty gap,
+    # which the current AnswerScore invariant rejects on load. Replay must re-grade it, not crash.
+    path = artifacts / "senior-strong.json"
+    raw = json.loads(path.read_text())
+    raw["grade"]["scores"][0]["gap"] = ""
+    path.write_text(json.dumps(raw))
+    engine = FakeReplayEngine(_grade(5))
+
+    report = replay_sessions(engine, [_persona(name="senior-strong")], artifacts, _PRICES)
+
+    assert engine.replayed == [("t1", "grade")]
+    reloaded = SimulatedSession.model_validate_json(path.read_text())
+    assert reloaded.grade is not None
+    assert [s.score for s in reloaded.grade.scores] == [5]
+    assert "replay senior-strong" in report
 
 
 def test_replay_sessions_passes_the_stage_through_to_the_engine(tmp_path: Path) -> None:

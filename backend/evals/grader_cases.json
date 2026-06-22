@@ -1,5 +1,5 @@
 {
- "description": "Answers the end-of-session grader must score, each graded against its target level. HUMAN-RECONCILED LABELS (the Phase 5 [verify] task): each label was walked case by case against the grader's rationale; where the grader read the rubric right the label was corrected, where the grader was wrong the label was kept and the grader prompt fixed instead. Each case is one question and one answer in the synthetic candidate's voice (Helioscope / Dunav Logistics). The labels carry the STAR evidence flags, specificity (low/medium/high), ownership (clear/mixed/unclear), the STAR elements left weak or missing, and an overall 1-5 score at the target level; score is checked within +/-1 since it is the most subjective field. The set spans the score range, STAR completeness, the I-vs-we line, leveling mismatches (complete stories that land below their target level), and non-STAR answers (ongoing work, motivation, a clarifying reply) that are graded for what they are, not docked for a Result they never had. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "description": "Answers the end-of-session grader must score, each graded against its target level. HUMAN-RECONCILED LABELS (the Phase 5 [verify] task): each label was walked case by case against the grader's rationale; where the grader read the rubric right the label was corrected, where the grader was wrong the label was kept and the grader prompt fixed instead. Each case is one question and one answer in the synthetic candidate's voice (Helioscope / Dunav Logistics). The labels carry the STAR evidence flags, specificity (low/medium/high), ownership (clear/mixed/unclear), the STAR elements left weak or missing, a one-sentence gap, and an overall 1-5 score at the target level; score is checked within +/-1 since it is the most subjective field. The gap obeys the grader's visible-deduction rule: it is non-empty for every score below 5 and empty only on a 5, so no sub-5 carries a silent deduction. The set spans the score range, STAR completeness, the I-vs-we line, leveling mismatches (complete stories that land below their target level), the 4-vs-3 boundary (a refinement-only gap is a 4, a real miss is a 3), deference judged by what was the candidate's to own (a small-team product call deferred to a boss is not docked when the candidate owns the execution), a light confidentiality carve-out (proprietary detail withheld but described in general terms is judged on what was described), and non-STAR answers (ongoing work, motivation, a clarifying reply) that are graded for what they are, not docked for a Result they never had. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
  "cases": [
   {
    "name": "complete-quantified-single-team-senior",
@@ -11,9 +11,10 @@
     "specificity": "high",
     "ownership": "clear",
     "weak_or_missing": [],
+    "gap": "Single-team scope on the pipeline; strong for senior, but not the cross-org reach that would make it a five.",
     "score": 4
    },
-   "note": "Complete STAR with a business outcome, but the scope is one team's pipeline; solid for senior, not a 5."
+   "note": "Complete STAR with a business outcome, but the scope is one team's pipeline; solid for senior, not a 5. The 4's gap is a refinement (a leveling note), which is what separates it from a real-miss 3."
   },
   {
    "name": "cross-team-leadership-senior",
@@ -27,7 +28,7 @@
     "weak_or_missing": [],
     "score": 5
    },
-   "note": "Cross-team influence, consensus-building, a governance model, a measured delivery gain; a strong senior story."
+   "note": "Cross-team influence, consensus-building, a governance model, a measured delivery gain; a strong senior story. Flag-free, so the gap is empty: the only score whose gap is empty is a 5."
   },
   {
    "name": "cross-org-standards-staff",
@@ -41,7 +42,7 @@
     "weak_or_missing": [],
     "score": 5
    },
-   "note": "Multi-team scope, explicit trade-offs, a measured organizational outcome; lands at staff."
+   "note": "Multi-team scope, explicit trade-offs, a measured organizational outcome; lands at staff. Flag-free, so the gap is empty."
   },
   {
    "name": "missing-result-mid",
@@ -53,6 +54,7 @@
     "specificity": "medium",
     "ownership": "clear",
     "weak_or_missing": ["result", "quantified_result"],
+    "gap": "The story stops before any outcome - say what the scheduling service actually changed.",
     "score": 2
    },
    "note": "The story stops before any outcome; no Result at all."
@@ -67,6 +69,7 @@
     "specificity": "medium",
     "ownership": "clear",
     "weak_or_missing": ["quantified_result"],
+    "gap": "The result is only qualitative; put a number on how far the demurrage fees fell.",
     "score": 3
    },
    "note": "Whole STAR arc but the result is qualitative; 'came down a lot' needs a number."
@@ -81,6 +84,7 @@
     "specificity": "medium",
     "ownership": "clear",
     "weak_or_missing": ["situation", "task", "result", "quantified_result"],
+    "gap": "A bare action with no setting, problem, or outcome around it.",
     "score": 2
    },
    "note": "A bare action with no setting, problem, or outcome around it."
@@ -95,6 +99,7 @@
     "specificity": "medium",
     "ownership": "unclear",
     "weak_or_missing": ["situation", "task", "action"],
+    "gap": "It is all 'we' - name what you personally did so the level can be read.",
     "score": 2
    },
    "note": "All 'we', no visible personal contribution; the result is real but the level is impossible to read."
@@ -109,6 +114,7 @@
     "specificity": "low",
     "ownership": "clear",
     "weak_or_missing": ["situation", "task", "quantified_result"],
+    "gap": "A grand claim with no specifics, constraints, or real outcome to back it.",
     "score": 2
    },
    "note": "A grand claim with no specifics, no constraints, no real outcome; reads as overstated scope."
@@ -123,9 +129,10 @@
     "specificity": "medium",
     "ownership": "clear",
     "weak_or_missing": ["situation", "task", "quantified_result"],
+    "gap": "A straightforward task with no real difficulty or trade-offs; show the hard part a senior story needs.",
     "score": 3
    },
-   "note": "Complete and quantified but a straightforward task with no real difficulty or trade-offs; lands below senior."
+   "note": "Complete and quantified but a straightforward task with no real difficulty or trade-offs; lands below senior. A real miss against the target level, so the gap is a 3's, not a 4's refinement."
   },
   {
    "name": "all-difficulty-no-impact-senior",
@@ -137,6 +144,7 @@
     "specificity": "medium",
     "ownership": "clear",
     "weak_or_missing": ["situation", "task", "result", "quantified_result"],
+    "gap": "Deep complexity but no business problem and no outcome - tie it to what the work was for.",
     "score": 2
    },
    "note": "Deep complexity but no business problem and no outcome; the overengineering smell."
@@ -151,9 +159,10 @@
     "specificity": "high",
     "ownership": "clear",
     "weak_or_missing": [],
+    "gap": "A concrete account of how you operate; one worked example would push it to a five.",
     "score": 4
    },
-   "note": "Not a STAR story; ongoing work graded on a concrete account of how they operate, not docked for a missing Result."
+   "note": "Not a STAR story; ongoing work graded on a concrete account of how they operate, not docked for a missing Result. The 4's gap is an edge to sharpen, not a flaw."
   },
   {
    "name": "buzzword-process-answer-mid",
@@ -165,6 +174,7 @@
     "specificity": "low",
     "ownership": "clear",
     "weak_or_missing": [],
+    "gap": "Generic process talk that names no real practice; nothing concrete to assess.",
     "score": 1
    },
    "note": "Generic process talk that names no real practice; nothing concrete to assess."
@@ -179,9 +189,10 @@
     "specificity": "high",
     "ownership": "not_applicable",
     "weak_or_missing": [],
+    "gap": "Well-grounded motivation; naming one specific thing you'd want to build would sharpen it further.",
     "score": 4
    },
-   "note": "A motivation answer, graded on substance not STAR; names the product and ties it to real experience."
+   "note": "A motivation answer, graded on substance not STAR; names the product and ties it to real experience. The 4's gap is a refinement, judged on substance, not docked for the missing STAR it never had."
   },
   {
    "name": "why-us-generic-senior",
@@ -193,6 +204,7 @@
     "specificity": "low",
     "ownership": "not_applicable",
     "weak_or_missing": [],
+    "gap": "Motivation with no grounding - it could be said to any company.",
     "score": 2
    },
    "note": "A motivation answer with no grounding; could be said to any company."
@@ -207,6 +219,7 @@
     "specificity": "medium",
     "ownership": "not_applicable",
     "weak_or_missing": [],
+    "gap": "A brief clarifying reply; there is little here to judge beyond the answer to the question.",
     "score": 3
    },
    "note": "A short clarifying reply, graded for what it is; not a story, so not docked for missing STAR."
@@ -221,9 +234,40 @@
     "specificity": "high",
     "ownership": "clear",
     "weak_or_missing": [],
+    "gap": "A clean, quantified single-team story; broader reach is what a five would add.",
     "score": 4
    },
-   "note": "A clean, complete, quantified single-team story; a strong mid answer."
+   "note": "A clean, complete, quantified single-team story; a strong mid answer. The 4's gap is a leveling refinement, not a real miss."
+  },
+  {
+   "name": "small-team-deference-owns-execution-senior",
+   "question": "Tell me about a project where you owned the technical approach end to end.",
+   "answer": "On our three-person team at Dunav, my boss decides which customer problems we take on next - that is his call, not mine. But once we picked the demurrage-billing rework, the whole technical side was mine. I designed a reconciliation service, chose to make it event-driven so we could replay a day's tariffs when a dispute came in, wrote it in Go, and ran it in shadow for a week against the old manual numbers before we cut over. Billing disputes dropped from about a dozen a month to one.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": true},
+    "specificity": "high",
+    "ownership": "clear",
+    "weak_or_missing": [],
+    "gap": "Owns the technical work end to end; the scope is one small team, which is what keeps it just under a five.",
+    "score": 4
+   },
+   "note": "Issue 6: deferring the product/prioritization call to the boss is normal on a small team and was never the candidate's to own, so it does not dock contribution; the candidate owns the design, the approach, and the execution end to end, so ownership stays 'clear'. The gap is a leveling note (single-team scope), never the deference."
+  },
+  {
+   "name": "confidentiality-declined-but-general-senior",
+   "question": "Tell me about the most complex system you've designed.",
+   "answer": "This was at a previous job and the code is in a private repo I can't quote, so I'll describe it in general terms. We had a pricing engine that recomputed quotes on every market tick, and it was missing its latency target under load. I can't share the exact model, but at a high level I moved the hot path off the full per-tick recompute onto an incremental update keyed on what actually changed, and added a bounded staleness window so we never blocked waiting on a full recompute. Tail latency came down enough to clear the target, though I'd rather not give the exact numbers.",
+   "target_level": "senior",
+   "proposed": {
+    "star": {"situation": true, "task": true, "action": true, "result": true, "quantified_result": false},
+    "specificity": "medium",
+    "ownership": "clear",
+    "weak_or_missing": ["quantified_result"],
+    "gap": "Concrete on the approach within what could be shared, but no number lands the result.",
+    "score": 3
+   },
+   "note": "Issue 7: proprietary detail (exact model, exact numbers) is legitimately withheld but the work is described concretely in general terms - the incremental update, the bounded staleness window, the latency problem. Specificity is judged on what was described ('medium', not docked to 'low' for the withheld detail), and ownership is clear. It is still not a free pass: the quantified result is absent, so it lands at 3, not 4."
   },
   {
    "name": "coding-school-small-team-end-to-end-ownership-senior-session",

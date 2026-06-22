@@ -176,7 +176,7 @@ GRADE = SessionGrade(
             specificity="high",
             ownership="clear",
             weak_or_missing=[],
-            gap="",
+            gap="Single-team scope, one refinement short of a five.",
             rationale="Complete STAR with a measured outcome at the target level.",
             score=4,
         )

@@ -5,7 +5,7 @@ from typing import Literal
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from sotellme.assessor import StarFlags
 from sotellme.caching import cache_system_prompt
@@ -55,7 +55,7 @@ class AnswerScore(BaseModel):
     gap: str = Field(
         description=(
             "One plain sentence on what most holds this answer back, for the coach to "
-            "act on. Empty when the answer is strong."
+            "act on. Empty only on a 5; non-empty for every score below 5."
         )
     )
     score: int = Field(
@@ -63,6 +63,20 @@ class AnswerScore(BaseModel):
         le=5,
         description="Overall strength of the answer at the target level, 1 (weak) to 5 (strong).",
     )
+
+    @model_validator(mode="after")
+    def _gap_is_empty_only_on_a_five(self) -> "AnswerScore":
+        """Enforce the visible-deduction rule: a sub-5 names its gap, a 5 has none.
+
+        Keeps the grader honest about silent deductions - every score below 5 must say
+        what holds the answer back, and a flag-free 5 carries no gap.
+        """
+        has_gap = bool(self.gap.strip())
+        if self.score == 5 and has_gap:
+            raise ValueError("a 5 is flag-free, so its gap must be empty")
+        if self.score < 5 and not has_gap:
+            raise ValueError("a score below 5 must name the gap that holds the answer back")
+        return self
 
 
 class SessionGrade(BaseModel):
