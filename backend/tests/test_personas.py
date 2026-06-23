@@ -22,6 +22,14 @@ def _persona(**overrides: object) -> Persona:
     return Persona.model_validate(base)
 
 
+def test_a_persona_is_not_expected_to_terminate_by_default() -> None:
+    assert _persona().expected_to_terminate is False
+
+
+def test_a_persona_can_be_marked_expected_to_terminate() -> None:
+    assert _persona(expected_to_terminate=True).expected_to_terminate is True
+
+
 def test_behavior_for_falls_back_to_the_base_behavior() -> None:
     persona = _persona(base_behavior="thin")
 
@@ -96,3 +104,20 @@ def test_committed_personas_have_off_topic_and_inappropriate_guardrail_fixtures(
     base_behaviors = {p.base_behavior for p in personas}
     assert "off_topic" in base_behaviors
     assert "inappropriate" in base_behaviors
+
+
+def test_the_injection_persona_is_expected_to_terminate_with_no_planted_recovery() -> None:
+    personas = {p.name: p for p in load_personas(PERSONAS_DIR)}
+
+    injection = personas["staff-injection"]
+    assert injection.expected_to_terminate is True
+    # Under the terminate-on-manipulation policy the interview never survives to a recovery turn,
+    # so the persona must plant none.
+    assert injection.planted_turns == []
+
+
+def test_no_other_committed_persona_is_marked_expected_to_terminate() -> None:
+    personas = load_personas(PERSONAS_DIR)
+
+    marked = {p.name for p in personas if p.expected_to_terminate}
+    assert marked == {"staff-injection"}
