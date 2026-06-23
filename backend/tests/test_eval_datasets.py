@@ -131,6 +131,72 @@ def test_grader_transcript_agreement_flags_a_turn_scored_twice() -> None:
     assert "duplicate" in result.comment
 
 
+def test_grader_transcript_agreement_flags_a_scored_declined_turn() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(scores=[_turn_score(1, 4), _turn_score(2, 3)])
+    expected = {"senior_floor_turns": [1], "declined_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 0.0
+    assert "declined" in result.comment
+
+
+def test_grader_transcript_agreement_passes_when_a_declined_turn_is_skipped() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(
+        scores=[_turn_score(1, 4)],
+        skipped=[
+            SkippedTurn(
+                turn_index=2,
+                question="Why our dedicated inference clusters specifically?",
+                reason="False premise; not the candidate's background. Real answer in turn 3.",
+            )
+        ],
+    )
+    expected = {"senior_floor_turns": [1], "declined_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 1.0
+
+
+def test_grader_transcript_agreement_flags_a_dodge_scored_above_a_one() -> None:
+    spec = dataset_specs()["grader"]
+    # A 2 is the boundary: a dodge of a fair question is the 1 anchor, so even a 2 fails.
+    grade = SessionGrade(scores=[_turn_score(1, 4), _turn_score(2, 2)])
+    expected = {"senior_floor_turns": [1], "dodge_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 0.0
+    assert "dodge" in result.comment
+
+
+def test_grader_transcript_agreement_flags_a_dodge_left_unscored() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(
+        scores=[_turn_score(1, 4)],
+        skipped=[SkippedTurn(turn_index=2, question="Walk me through the rollout.", reason="x")],
+    )
+    expected = {"senior_floor_turns": [1], "dodge_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 0.0
+    assert "dodge" in result.comment
+
+
+def test_grader_transcript_agreement_passes_when_a_dodge_scores_a_one() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(scores=[_turn_score(1, 4), _turn_score(2, 1)])
+    expected = {"senior_floor_turns": [1], "dodge_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 1.0
+
+
 def _grader_cases() -> list[dict[str, Any]]:
     document = json.loads((EVALS_DIR / "grader_cases.json").read_text())
     return cast(list[dict[str, Any]], document["cases"])
@@ -202,6 +268,67 @@ def test_clarifying_turns_map_through_the_spec_into_the_expectation() -> None:
     [item] = spec.to_items([case], CTX)
 
     assert item.expected_output["clarifying_turns"] == case["clarifying_turns"]
+
+
+def test_declined_turn_cases_pin_skips_disjoint_from_the_scored_ones() -> None:
+    for name in (
+        "declined-false-premise-skipped-senior-session",
+        "declined-already-answered-skipped-senior-session",
+    ):
+        case = _case_named(name)
+        declined = set(case["declined_turns"])
+        scored = set(case.get("senior_floor_turns", [])) | set(case.get("senior_ceiling_turns", []))
+        turn_count = len(case["turns"])
+
+        assert declined, name
+        assert all(1 <= turn <= turn_count for turn in declined), name
+        assert not (declined & scored), f"{name}: a turn cannot be both declined and scored"
+
+
+def test_dodge_case_pins_a_scored_low_turn_disjoint_from_the_scored_ones() -> None:
+    case = _case_named("dodge-false-callback-scored-low-senior-session")
+    dodge = set(case["dodge_turns"])
+    scored = set(case.get("senior_floor_turns", []))
+    turn_count = len(case["turns"])
+
+    assert dodge
+    assert all(1 <= turn <= turn_count for turn in dodge)
+    assert not (dodge & scored), "a dodge turn is scored low, not among the floor turns"
+
+
+def test_premise_correction_then_answer_case_is_scored_not_skipped() -> None:
+    spec = dataset_specs()["grader"]
+    case = _case_named("premise-correction-then-answer-scored-senior-session")
+    expected = spec.to_expected(case)
+
+    assert expected["senior_floor_turns"] == [1]
+    assert not expected["declined_turns"] and not expected["dodge_turns"]
+
+    scored = SessionGrade(scores=[_turn_score(1, 4)])
+    skipped_instead = SessionGrade(
+        scores=[],
+        skipped=[
+            SkippedTurn(turn_index=1, question="Tell me about the gateway.", reason="declined")
+        ],
+    )
+
+    [scored_result] = spec.evaluate(scored.model_dump(), expected, {"kind": "transcript"})
+    [skipped_result] = spec.evaluate(skipped_instead.model_dump(), expected, {"kind": "transcript"})
+
+    assert scored_result.value == 1.0
+    assert skipped_result.value == 0.0, "this case demands the turn be scored, not skipped"
+
+
+def test_declined_and_dodge_turns_map_through_the_spec_into_the_expectation() -> None:
+    spec = dataset_specs()["grader"]
+    declined_case = _case_named("declined-false-premise-skipped-senior-session")
+    dodge_case = _case_named("dodge-false-callback-scored-low-senior-session")
+
+    [declined_item] = spec.to_items([declined_case], CTX)
+    [dodge_item] = spec.to_items([dodge_case], CTX)
+
+    assert declined_item.expected_output["declined_turns"] == declined_case["declined_turns"]
+    assert dodge_item.expected_output["dodge_turns"] == dodge_case["dodge_turns"]
 
 
 def test_a_case_label_never_leaks_into_the_dataset_input() -> None:

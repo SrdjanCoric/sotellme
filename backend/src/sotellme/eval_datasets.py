@@ -86,6 +86,8 @@ class TranscriptExpectation(TypedDict, total=False):
     senior_floor_turns: list[int]
     senior_ceiling_turns: list[int]
     clarifying_turns: list[int]
+    declined_turns: list[int]
+    dodge_turns: list[int]
 
 
 def apply_limit(items: Sequence[Any], limit: int | None) -> list[Any]:
@@ -191,7 +193,12 @@ def _role_failures(context: RoleContext, expect: RoleExpectation) -> list[str]:
 def _transcript_agreement(
     scores: Sequence[AnswerScore], expected: TranscriptExpectation
 ) -> EvalScore:
-    """Score whether a transcript's grades respect the floor, ceiling, and skipped turns."""
+    """Score whether a transcript's grades respect the floor, ceiling, skips, and dodges.
+
+    `declined_turns` are legitimate declines (false-premise correction or a topic answered in
+    an earlier turn) that must be skipped, not scored; `dodge_turns` are fair questions the
+    candidate evaded, which must score a 1 (a flat non-answer), never skipped.
+    """
     turns_scored = [score.turn_index for score in scores]
     by_turn = {score.turn_index: score for score in scores}
     duplicates = sorted({turn for turn in turns_scored if turns_scored.count(turn) > 1})
@@ -206,6 +213,10 @@ def _transcript_agreement(
         if i not in by_turn or by_turn[i].score > 3
     ]
     scored_clarifying = [i for i in expected.get("clarifying_turns", []) if i in by_turn]
+    scored_declined = [i for i in expected.get("declined_turns", []) if i in by_turn]
+    mis_scored_dodges = [
+        i for i in expected.get("dodge_turns", []) if i not in by_turn or by_turn[i].score > 1
+    ]
     parts = []
     if duplicates:
         parts.append(f"duplicate scores for turns {duplicates}")
@@ -215,6 +226,10 @@ def _transcript_agreement(
         parts.append(f"over-leveled or unscored at turns {too_high}")
     if scored_clarifying:
         parts.append(f"scored clarifying turns that should be skipped {scored_clarifying}")
+    if scored_declined:
+        parts.append(f"scored declined turns that should be skipped {scored_declined}")
+    if mis_scored_dodges:
+        parts.append(f"dodge turns not scored a 1 {mis_scored_dodges}")
     return EvalScore(
         name="grader_agreement",
         value=0.0 if parts else 1.0,
@@ -292,6 +307,8 @@ class GraderEval(AgentEval):
             "senior_floor_turns": case.get("senior_floor_turns", []),
             "senior_ceiling_turns": case.get("senior_ceiling_turns", []),
             "clarifying_turns": case.get("clarifying_turns", []),
+            "declined_turns": case.get("declined_turns", []),
+            "dodge_turns": case.get("dodge_turns", []),
         }
 
     def to_metadata(self, case: dict[str, Any]) -> dict[str, Any]:
