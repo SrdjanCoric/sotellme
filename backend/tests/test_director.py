@@ -42,6 +42,12 @@ DECISION = DirectorDecision(
     action="follow_up", subject="rewrote the scheduler alone", reason="ownership signal"
 )
 
+REPROMPT_DECISION = DirectorDecision(
+    action="reprompt",
+    subject="the rollout they skipped past",
+    reason="a fair question went unanswered",
+)
+
 
 def situation(
     transcript: list[Turn] | None = None,
@@ -66,6 +72,15 @@ def test_the_director_returns_a_structured_decision() -> None:
     decision = LLMDirector(model).decide(situation())
 
     assert decision == DECISION
+
+
+def test_the_director_can_reprompt_a_deflected_question() -> None:
+    model = StubChatModel(structured_response=REPROMPT_DECISION)
+
+    decision = LLMDirector(model).decide(situation())
+
+    assert decision == REPROMPT_DECISION
+    assert decision.action == "reprompt"
 
 
 def test_the_director_sees_the_whole_situation() -> None:

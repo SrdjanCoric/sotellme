@@ -22,9 +22,11 @@ from sotellme.coach import AnswerAdvice, CoachReport, Drill
 from sotellme.coverage import (
     DEFAULT_FOLLOW_UP_CAP,
     DEFAULT_QUESTION_CAP,
+    DEFAULT_REPROMPT_CAP,
     EnvelopeState,
     follow_up_allowed,
     question_allowed,
+    reprompt_allowed,
 )
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.extraction import extract_cv_text
@@ -66,6 +68,11 @@ BUDGET_WRAP_REASON = "The session token budget is nearly spent; the interview wr
 FOLLOW_UPS_EXHAUSTED_WRAP_REASON = (
     "Follow-ups on this topic are exhausted and the director offered no new topic; "
     "the interview ends here."
+)
+
+REPROMPTS_EXHAUSTED_WRAP_REASON = (
+    "The question was re-prompted once and still went unanswered, and the director "
+    "offered no new topic; the interview ends here."
 )
 
 ProfileParser = Callable[[str], CandidateProfile]
@@ -140,6 +147,7 @@ class InterviewState(TypedDict, total=False):
     assessments: list[TopicAssessment]
     questions_asked: int
     consecutive_follow_ups: int
+    consecutive_reprompts: int
     current_topic: str
     decision: DirectorDecision
     closing: str
@@ -235,6 +243,7 @@ class InterviewEngine:
         guardrail: Guardrail,
         question_cap: int = DEFAULT_QUESTION_CAP,
         follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
+        reprompt_cap: int = DEFAULT_REPROMPT_CAP,
         token_budget: int = DEFAULT_TOKEN_BUDGET,
         callbacks: list[BaseCallbackHandler] | None = None,
     ) -> None:
@@ -270,6 +279,7 @@ class InterviewEngine:
             envelope = EnvelopeState(
                 questions_asked=state.get("questions_asked", 0),
                 consecutive_follow_ups=state.get("consecutive_follow_ups", 0),
+                consecutive_reprompts=state.get("consecutive_reprompts", 0),
                 budget_exhausted=budget.exhausted,
             )
             if not question_allowed(envelope, question_cap):
@@ -287,13 +297,39 @@ class InterviewEngine:
                 consecutive_follow_ups=envelope.consecutive_follow_ups,
                 follow_up_cap=follow_up_cap,
             )
+            # An over-cap choice earns the director one re-decide, told that avenue is spent;
+            # if it then picks the *other* capped action, that re-decide is gated too. Each
+            # action gets exactly one nudge, so this settles in at most two re-decides before
+            # falling back to a wrap.
             decision = director.decide(situation)
-            if decision.action == "follow_up" and not follow_up_allowed(envelope, follow_up_cap):
-                decision = director.decide(replace(situation, follow_ups_exhausted=True))
-                if decision.action == "follow_up":
-                    decision = DirectorDecision(
-                        action="wrap_up", reason=FOLLOW_UPS_EXHAUSTED_WRAP_REASON
+            follow_ups_exhausted = False
+            reprompts_exhausted = False
+            while True:
+                if decision.action == "follow_up" and not follow_up_allowed(
+                    envelope, follow_up_cap
+                ):
+                    if follow_ups_exhausted:
+                        decision = DirectorDecision(
+                            action="wrap_up", reason=FOLLOW_UPS_EXHAUSTED_WRAP_REASON
+                        )
+                        break
+                    follow_ups_exhausted = True
+                elif decision.action == "reprompt" and not reprompt_allowed(envelope, reprompt_cap):
+                    if reprompts_exhausted:
+                        decision = DirectorDecision(
+                            action="wrap_up", reason=REPROMPTS_EXHAUSTED_WRAP_REASON
+                        )
+                        break
+                    reprompts_exhausted = True
+                else:
+                    break
+                decision = director.decide(
+                    replace(
+                        situation,
+                        follow_ups_exhausted=follow_ups_exhausted,
+                        reprompts_exhausted=reprompts_exhausted,
                     )
+                )
             return {"decision": decision}
 
         def pose_question(state: InterviewState) -> InterviewState:
@@ -310,13 +346,22 @@ class InterviewEngine:
                 if decision.action == "new_topic"
                 else state.get("current_topic", "")
             )
-            follow_ups = (
-                state.get("consecutive_follow_ups", 0) + 1 if decision.action == "follow_up" else 0
+            prior_follow_ups = state.get("consecutive_follow_ups", 0)
+            if decision.action == "follow_up":
+                follow_ups = prior_follow_ups + 1
+            elif decision.action == "reprompt":
+                # a reprompt stays on the same thread, so the follow-up count carries over
+                follow_ups = prior_follow_ups
+            else:
+                follow_ups = 0
+            reprompts = (
+                state.get("consecutive_reprompts", 0) + 1 if decision.action == "reprompt" else 0
             )
             return {
                 "question": question,
                 "questions_asked": state.get("questions_asked", 0) + 1,
                 "consecutive_follow_ups": follow_ups,
+                "consecutive_reprompts": reprompts,
                 "current_topic": topic,
             }
 

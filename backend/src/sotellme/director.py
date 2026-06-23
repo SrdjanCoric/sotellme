@@ -16,7 +16,7 @@ from sotellme.profile import CandidateProfile
 from sotellme.prompts import director_messages
 from sotellme.role import RoleContext
 
-DirectorAction = Literal["follow_up", "new_topic", "wrap_up", "terminate"]
+DirectorAction = Literal["follow_up", "reprompt", "new_topic", "wrap_up", "terminate"]
 
 
 class DirectorDecision(BaseModel):
@@ -24,17 +24,19 @@ class DirectorDecision(BaseModel):
 
     action: DirectorAction = Field(
         description=(
-            "What happens next: follow_up digs into the last answer, new_topic opens "
-            "a different stretch of the interview, wrap_up ends the session because "
-            "there is enough signal, terminate ends it because the input has stopped "
-            "being an interview."
+            "What happens next: follow_up digs into the last answer, reprompt re-asks a "
+            "fair question the candidate deflected or wrongly claimed they already "
+            "answered, new_topic opens a different stretch of the interview, wrap_up ends "
+            "the session because there is enough signal, terminate ends it because the "
+            "input has stopped being an interview."
         )
     )
     subject: str = Field(
         default="",
         description=(
             "For follow_up: the claim or aspect of the last answer to chase, "
-            "near-verbatim. For new_topic: the topic to open, concrete enough that a "
+            "near-verbatim. For reprompt: the substance of the unanswered question to put "
+            "to them again. For new_topic: the topic to open, concrete enough that a "
             "colleague could ask about it. Empty for wrap_up and terminate."
         ),
     )
@@ -61,6 +63,7 @@ class DirectorSituation:
     consecutive_follow_ups: int = 0
     follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP
     follow_ups_exhausted: bool = False
+    reprompts_exhausted: bool = False
 
 
 class DirectorError(Exception):
@@ -161,6 +164,7 @@ class LLMDirector:
                 consecutive_follow_ups=situation.consecutive_follow_ups,
                 follow_up_cap=situation.follow_up_cap,
                 follow_ups_exhausted=situation.follow_ups_exhausted,
+                reprompts_exhausted=situation.reprompts_exhausted,
             ),
             self._provider,
         )

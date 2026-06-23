@@ -38,6 +38,10 @@ FOLLOW_UP_DECISION = DirectorDecision(
     action="follow_up", subject="the migration claim", reason="impact left unexplained"
 )
 
+REPROMPT_DECISION = DirectorDecision(
+    action="reprompt", subject="the migration they skipped past", reason="fair question unanswered"
+)
+
 WRAP_UP_DECISION = DirectorDecision(action="wrap_up", reason="enough signal")
 
 CLOSING_TURN = "That covers it, thanks for walking me through the migration."
@@ -234,6 +238,7 @@ def build_engine(
     assessor: object = None,
     question_cap: int = 20,
     follow_up_cap: int = 6,
+    reprompt_cap: int = 1,
     token_budget: int = DEFAULT_TOKEN_BUDGET,
 ) -> InterviewEngine:
     return InterviewEngine(
@@ -249,6 +254,7 @@ def build_engine(
         guardrail=guardrail or ScriptedGuardrail(),
         question_cap=question_cap,
         follow_up_cap=follow_up_cap,
+        reprompt_cap=reprompt_cap,
         token_budget=token_budget,
     )
 
@@ -705,6 +711,115 @@ def test_an_exhausted_thread_lets_the_director_open_a_new_topic(tmp_path: Path) 
 
     topics = [entry.topic for entry in state.values["assessments"]]
     assert topics == ["their background", "their background", "the outage story"]
+
+
+def test_a_reprompt_re_asks_the_question_without_leaving_the_topic(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, REPROMPT_DECISION, WRAP_UP_DECISION])
+    interviewer = StubInterviewer()
+    with build_engine(tmp_path / "data", director=director, interviewer=interviewer) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "I already told you that.")
+        state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
+
+    assert result.next_question == "Question 2 about the migration they skipped past."
+    assert interviewer.seen_decisions[-1] == REPROMPT_DECISION
+    # a reprompt stays on the opener's topic and does not count as a follow-up
+    assert state.values["current_topic"] == "their background"
+    assert state.values["consecutive_follow_ups"] == 0
+    assert state.values["consecutive_reprompts"] == 1
+
+
+class RepromptAwareDirector:
+    """Reprompts until told the reprompt is used up, then opens one new topic."""
+
+    def __init__(self) -> None:
+        self.situations: list[DirectorSituation] = []
+        self.opened_after_exhaustion = False
+
+    def decide(self, situation: DirectorSituation) -> DirectorDecision:
+        self.situations.append(situation)
+        if len(self.situations) == 1:
+            return OPENING_DECISION
+        if situation.reprompts_exhausted:
+            self.opened_after_exhaustion = True
+            return DirectorDecision(
+                action="new_topic", subject="the outage story", reason="they would not answer"
+            )
+        if self.opened_after_exhaustion:
+            return WRAP_UP_DECISION
+        return REPROMPT_DECISION
+
+
+def test_a_reprompt_preserves_the_follow_up_count_on_the_same_thread(tmp_path: Path) -> None:
+    director = ScriptedDirector(
+        [OPENING_DECISION, FOLLOW_UP_DECISION, REPROMPT_DECISION, WRAP_UP_DECISION]
+    )
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "Opening answer.")
+        engine.submit_answer(session.thread_id, "Follow-up answer.")
+        state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
+
+    # the reprompt stays on the same thread: it must not refill the follow-up budget
+    assert state.values["consecutive_follow_ups"] == 1
+    assert state.values["consecutive_reprompts"] == 1
+
+
+class CapEvadingDirector:
+    """At cap on both, tries reprompt then a follow-up to slip past the follow-up cap."""
+
+    def __init__(self) -> None:
+        self.situations: list[DirectorSituation] = []
+
+    def decide(self, situation: DirectorSituation) -> DirectorDecision:
+        self.situations.append(situation)
+        turns = len(situation.transcript)
+        if turns == 0:
+            return OPENING_DECISION
+        if turns == 1:
+            return FOLLOW_UP_DECISION
+        if turns == 2:
+            return REPROMPT_DECISION
+        if situation.follow_ups_exhausted:
+            return WRAP_UP_DECISION
+        if situation.reprompts_exhausted:
+            return FOLLOW_UP_DECISION
+        return REPROMPT_DECISION
+
+
+def test_a_reprompt_re_decided_into_a_follow_up_still_honors_the_follow_up_cap(
+    tmp_path: Path,
+) -> None:
+    director = CapEvadingDirector()
+    with build_engine(
+        tmp_path / "data", director=director, follow_up_cap=1, reprompt_cap=1
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "Opening answer.")  # follow-up: count -> 1 (at cap)
+        engine.submit_answer(
+            session.thread_id, "Follow-up answer."
+        )  # reprompt: count -> 1 (at cap)
+        result = engine.submit_answer(session.thread_id, "Deflection.")  # both caps reached
+        state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
+
+    # the follow-up the director slipped in after the reprompt re-decide must not exceed the cap
+    assert state.values["consecutive_follow_ups"] <= 1
+    assert result.finished
+    assert result.closing == CLOSING_TURN
+
+
+def test_a_reprompt_presses_once_then_the_director_advances(tmp_path: Path) -> None:
+    director = RepromptAwareDirector()
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        first = engine.submit_answer(session.thread_id, "Background answer.")
+        assert first.next_question == "Question 2 about the migration they skipped past."
+
+        result = engine.submit_answer(session.thread_id, "Let's just move on.")
+
+    assert result.next_question == "Question 3 about the outage story."
+    assert director.situations[-1].reprompts_exhausted
+    assert not director.situations[-2].reprompts_exhausted
 
 
 def test_the_director_sees_the_consecutive_follow_up_count(tmp_path: Path) -> None:

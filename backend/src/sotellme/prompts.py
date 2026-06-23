@@ -215,6 +215,19 @@ DIRECTOR_SYSTEM_PROMPT = (
     "- When they say they have no such story, never demand it again; open something "
     "adjacent and real from their profile instead.\n"
     "</follow_the_interest>\n"
+    "<pressing_a_deflection>\n"
+    "Sometimes a candidate dodges a fair question they could answer: a bare non-answer, a "
+    "change of subject, 'let's move on', or claiming they already covered it when the "
+    "transcript shows they did not. On a fair question that is still unanswered, do not "
+    "let that stand on the first miss and do not move on as though it were answered. "
+    "Reprompt once: name the substance you still need, so a colleague can put the same "
+    "question back to them warmly. A reprompt is not a follow_up - a follow_up digs into "
+    "what they did say, while a reprompt re-asks what they did not actually answer. Use it "
+    "only once per question: if they deflect again after the reprompt, that is your "
+    "answer, and you open a new topic or wrap up rather than press a third time. A genuine "
+    "decline is not a deflection - when they truly have no such story, or correct a false "
+    "premise in the question, never reprompt; open something adjacent instead.\n"
+    "</pressing_a_deflection>\n"
     "<sufficiency_first>\n"
     "The assessment notes tell you, for each topic, whether it now holds enough signal. "
     "Let that judgment lead. When the notes say the current topic holds enough signal, you "
@@ -254,11 +267,16 @@ DIRECTOR_HUMAN_TEMPLATE = (
     "Consecutive follow-ups on the current topic: {consecutive_follow_ups} of a hard "
     "cap of {follow_up_cap}.\n"
     "{exhausted_line}"
+    "{reprompt_exhausted_line}"
     "Decide what happens next."
 )
 
 DIRECTOR_FOLLOW_UPS_EXHAUSTED_LINE = (
     "Follow-ups on the current topic are exhausted: open a new topic or wrap up.\n"
+)
+
+DIRECTOR_REPROMPTS_EXHAUSTED_LINE = (
+    "You have already re-prompted this question once: open a new topic or wrap up.\n"
 )
 
 DIRECTOR_EMPHASIS_TEMPLATE = "Competency emphasis for this role: {emphasis}.\n"
@@ -289,6 +307,7 @@ def director_messages(
     consecutive_follow_ups: int = 0,
     follow_up_cap: int = DEFAULT_FOLLOW_UP_CAP,
     follow_ups_exhausted: bool = False,
+    reprompts_exhausted: bool = False,
 ) -> list[tuple[str, str]]:
     """Build the messages that ask the director to decide the next interview move."""
     emphasis_line = (
@@ -316,6 +335,9 @@ def director_messages(
                 consecutive_follow_ups=consecutive_follow_ups,
                 follow_up_cap=follow_up_cap,
                 exhausted_line=(DIRECTOR_FOLLOW_UPS_EXHAUSTED_LINE if follow_ups_exhausted else ""),
+                reprompt_exhausted_line=(
+                    DIRECTOR_REPROMPTS_EXHAUSTED_LINE if reprompts_exhausted else ""
+                ),
             ),
         ),
     ]
@@ -427,6 +449,13 @@ FOLLOW_UP_DIRECTIVE_TEMPLATE = (
 
 NEW_TOPIC_DIRECTIVE_TEMPLATE = (
     "The interview now turns to: {subject}. Why now: {reason}. Ask one question that opens it."
+)
+
+REPROMPT_DIRECTIVE_TEMPLATE = (
+    "They have not actually answered this yet: {subject}. Why it matters: {reason}. Warmly "
+    "put the question to them once more, asking directly for the substance you still need. "
+    "Stay friendly and assume good faith - do not point out that they sidestepped it or "
+    "say they failed to answer; just invite the story, anchored in what they have said."
 )
 
 QUESTION_ROLE_DETAILS_TEMPLATE = "Here are the role details.\n{role_details}\n"

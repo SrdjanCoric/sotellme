@@ -1,9 +1,11 @@
 from sotellme.coverage import (
     DEFAULT_FOLLOW_UP_CAP,
     DEFAULT_QUESTION_CAP,
+    DEFAULT_REPROMPT_CAP,
     EnvelopeState,
     follow_up_allowed,
     question_allowed,
+    reprompt_allowed,
 )
 
 
@@ -39,6 +41,23 @@ def test_the_follow_up_cap_is_configurable() -> None:
 
     assert follow_up_allowed(state, follow_up_cap=3)
     assert not follow_up_allowed(state, follow_up_cap=2)
+
+
+def test_a_first_reprompt_on_a_question_is_allowed() -> None:
+    assert reprompt_allowed(EnvelopeState(questions_asked=3, consecutive_reprompts=0))
+
+
+def test_the_reprompt_cap_stops_a_second_press() -> None:
+    state = EnvelopeState(questions_asked=3, consecutive_reprompts=DEFAULT_REPROMPT_CAP)
+
+    assert not reprompt_allowed(state)
+
+
+def test_the_reprompt_cap_is_configurable() -> None:
+    state = EnvelopeState(questions_asked=3, consecutive_reprompts=1)
+
+    assert reprompt_allowed(state, reprompt_cap=2)
+    assert not reprompt_allowed(state, reprompt_cap=1)
 
 
 def test_an_exhausted_budget_forces_the_close() -> None:
