@@ -19,7 +19,6 @@ from sotellme.cli import (
     TARGET_LEVELS,
     _data_dir,
     build_engine,
-    format_score_summary,
 )
 from sotellme.coach import CoachingError, CoachReport
 from sotellme.config import (
@@ -43,7 +42,7 @@ from sotellme.grader import GradingError, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.posting import PostingInputError, resolve_posting_text
 from sotellme.profile import CandidateProfile, ProfileParseError
-from sotellme.report import render_report, write_report
+from sotellme.report import write_report
 from sotellme.role import RoleContextError, TargetLevel
 from sotellme.tracing import TracingError, langfuse_callbacks, langfuse_configured
 
@@ -244,6 +243,26 @@ def chat_messages(state: WebState) -> list[ChatMessage]:
     return messages
 
 
+@dataclass(frozen=True)
+class ReportView:
+    """Layout-independent decision of what the final report screen shows."""
+
+    coaching: CoachReport | None
+    warning: str | None
+    notice: str | None
+
+
+def resolve_report_view(state: WebState) -> ReportView:
+    """Decide what the report screen shows from a finished state, independent of layout."""
+    has_scores = state.grade is not None and bool(state.grade.scores)
+    if state.ended_early and not has_scores:
+        return ReportView(coaching=None, warning=None, notice=ENDED_EARLY_EMPTY_MESSAGE)
+    warning = ENDED_EARLY_PARTIAL_MESSAGE if state.ended_early else None
+    if state.coach is not None and has_scores:
+        return ReportView(coaching=state.coach, warning=warning, notice=None)
+    return ReportView(coaching=None, warning=warning, notice=NO_COACHING_MESSAGE)
+
+
 AGENT_STEP_LABELS = {
     "parser": "Reading your CV",
     "role_builder": "Sizing up the role",
@@ -330,7 +349,7 @@ def run() -> None:
         return
     phase = phase_of(state)
     if phase == "report":
-        _render_report(state)
+        render_report_view(state)
         return
     engine = st.session_state.get("engine")
     if not isinstance(engine, InterviewEngine):
@@ -670,33 +689,71 @@ def _aim_progress(status: Any, label: str) -> None:
         progress.aim(status, label)
 
 
-def _render_report(state: WebState) -> None:
-    """Render the final report: transcript, scorecard, coaching, and save option."""
+def _render_chat_transcript(state: WebState) -> None:
+    """Render the interview as chat bubbles."""
+    import streamlit as st
+
+    for role, content in chat_messages(state):
+        st.chat_message(role).write(content)
+
+
+def _render_coaching(coach: CoachReport, state: WebState) -> None:
+    """Render the coaching sections natively, followed by the save-report control."""
+    import streamlit as st
+
+    if coach.summary.strip():
+        st.markdown(coach.summary)
+    if coach.answer_advice:
+        st.divider()
+        st.subheader("What to work on, answer by answer")
+        for advice in coach.answer_advice:
+            st.markdown(f"**{advice.question}**")
+            st.markdown(advice.diagnosis)
+            st.markdown(f"**Fix:** {advice.fix}")
+    if coach.drills:
+        st.divider()
+        st.subheader("Drills")
+        for drill in coach.drills:
+            st.markdown(f"**{drill.focus}**")
+            st.markdown(drill.exercise)
+    if coach.study_plan.strip():
+        st.divider()
+        st.subheader("Study plan")
+        st.markdown(coach.study_plan)
+    st.divider()
+    _render_save_report(coach, state)
+
+
+def _render_save_report(coach: CoachReport, state: WebState) -> None:
+    """Render the save-report button and the saved-path confirmation."""
+    import streamlit as st
+
+    report_path = st.session_state.get("report_path")
+    if report_path is None and st.button("Save report"):
+        report_path = write_report(coach, state.transcript, Path.cwd(), datetime.now())
+        st.session_state.report_path = report_path
+    if report_path is not None:
+        st.caption(f"Saved your full report to {report_path}")
+
+
+def render_report_view(state: WebState) -> None:
+    """Render the final report as Coaching and Transcript tabs, with a save option."""
     import streamlit as st
 
     _render_level_caption(state)
-    for role, content in chat_messages(state):
-        st.chat_message(role).write(content)
-    grade = state.grade
-    coach = state.coach
-    has_scores = grade is not None and bool(grade.scores)
-    if state.ended_early and not has_scores:
-        st.info(ENDED_EARLY_EMPTY_MESSAGE)
+    view = resolve_report_view(state)
+    if view.warning is not None:
+        st.warning(view.warning)
+    if view.coaching is not None:
+        coaching_tab, transcript_tab = st.tabs(["Coaching", "Transcript"])
+        with coaching_tab:
+            _render_coaching(view.coaching, state)
+        with transcript_tab:
+            _render_chat_transcript(state)
         return
-    if state.ended_early:
-        st.warning(ENDED_EARLY_PARTIAL_MESSAGE)
-    if coach is not None and grade is not None and grade.scores:
-        st.subheader("Scorecard")
-        st.text(format_score_summary(grade))
-        st.markdown(render_report(coach, state.transcript))
-        report_path = st.session_state.get("report_path")
-        if report_path is None and st.button("Save report"):
-            report_path = write_report(coach, state.transcript, Path.cwd(), datetime.now())
-            st.session_state.report_path = report_path
-        if report_path is not None:
-            st.caption(f"Saved your full report to {report_path}")
-    else:
-        st.info(NO_COACHING_MESSAGE)
+    _render_chat_transcript(state)
+    if view.notice is not None:
+        st.info(view.notice)
 
 
 def _upload_dir() -> Path:
