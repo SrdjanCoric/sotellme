@@ -62,8 +62,9 @@ _PROFILE = CandidateProfile(
 class FakeEngine:
     """Mimics the InterviewEngine seam: needs a level, then poses questions until finished."""
 
-    def __init__(self, questions: list[str]) -> None:
+    def __init__(self, questions: list[str], terminate_after: int | None = None) -> None:
         self._questions = questions
+        self._terminate_after = terminate_after
         self._posed = 0
         self.answers: list[str] = []
 
@@ -82,6 +83,10 @@ class FakeEngine:
         transcript = [
             Turn(question=self._questions[i], answer=self.answers[i]) for i in range(self._posed)
         ]
+        if self._terminate_after is not None and len(self.answers) >= self._terminate_after:
+            return TurnResult(
+                next_question=None, closing="Ended early.", ended_early=True, transcript=transcript
+            )
         if self._posed >= len(self._questions):
             return TurnResult(next_question=None, closing="Thanks.", transcript=transcript)
         next_question = self._questions[self._posed]
@@ -145,6 +150,17 @@ def test_simulate_session_stops_at_the_max_turn_cap(tmp_path: Path) -> None:
     assert session.turns == 2
     assert session.finished_reason == "max_turns"
     assert len(engine.answers) == 2
+
+
+def test_simulate_session_flags_an_early_termination(tmp_path: Path) -> None:
+    engine = FakeEngine(["Q1", "Q2", "Q3"], terminate_after=2)
+
+    session = simulate_session(
+        engine, EchoSimulator(), _persona(), tmp_path / "cv.md", TurnRecorder(), max_turns=20
+    )
+
+    assert session.finished_reason == "terminated"
+    assert session.turns == 2
 
 
 _CONTEXT = RoleContext(

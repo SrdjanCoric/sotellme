@@ -60,6 +60,12 @@ NO_SCORES_MESSAGE = "No answers to score from this session."
 
 NO_COACHING_MESSAGE = "No coaching for this session; there were no answers to work from."
 
+ENDED_EARLY_EMPTY_MESSAGE = "Interview ended early — not enough was said to give feedback."
+
+ENDED_EARLY_PARTIAL_MESSAGE = (
+    "This interview ended early; the feedback below covers only the answers given first."
+)
+
 NO_REPORTS_MESSAGE = "No coaching reports in this directory yet."
 
 _STAR_LABELS = {
@@ -460,6 +466,7 @@ def _run_session(
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
     transcript: list[Turn] = []
+    ended_early = False
     while question is not None:
         console.print(Panel(question, title="Interviewer", border_style="cyan"))
         if answer_session is not None:
@@ -475,21 +482,32 @@ def _run_session(
         grade = result.grade
         coach = result.coach
         transcript = result.transcript
+        ended_early = result.ended_early
     if closing:
         console.print(Panel(closing, title="Interviewer", border_style="cyan"))
-    if grade is not None:
-        console.print(Panel(format_score_summary(grade), title="Scorecard", border_style="magenta"))
-    if coach is not None and grade is not None and grade.scores:
-        try:
-            path = write_report(coach, transcript, Path.cwd(), datetime.now())
-        except OSError as exc:
-            console.print(f"[red]Could not save the coaching report: {exc}[/red]")
-        else:
-            if coach.summary.strip():
-                console.print(Panel(coach.summary.strip(), title="Coaching", border_style="green"))
-            console.print(f"\n[bold]Your full coaching report:[/bold] {path}")
+    has_scores = grade is not None and bool(grade.scores)
+    if ended_early and not has_scores:
+        console.print(f"\n[yellow]{ENDED_EARLY_EMPTY_MESSAGE}[/yellow]")
     else:
-        console.print(f"\n[dim]{NO_COACHING_MESSAGE}[/dim]")
+        if ended_early:
+            console.print(f"\n[yellow]{ENDED_EARLY_PARTIAL_MESSAGE}[/yellow]")
+        if grade is not None:
+            console.print(
+                Panel(format_score_summary(grade), title="Scorecard", border_style="magenta")
+            )
+        if coach is not None and grade is not None and grade.scores:
+            try:
+                path = write_report(coach, transcript, Path.cwd(), datetime.now())
+            except OSError as exc:
+                console.print(f"[red]Could not save the coaching report: {exc}[/red]")
+            else:
+                if coach.summary.strip():
+                    console.print(
+                        Panel(coach.summary.strip(), title="Coaching", border_style="green")
+                    )
+                console.print(f"\n[bold]Your full coaching report:[/bold] {path}")
+        else:
+            console.print(f"\n[dim]{NO_COACHING_MESSAGE}[/dim]")
     summary = summarize_actual_cost(engine.session_usage(), prices)
     console.print(f"\n[dim]{format_cost_summary(summary)}[/dim]")
 

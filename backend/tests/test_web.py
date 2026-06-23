@@ -1,11 +1,13 @@
 import sys
 import types
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 import sotellme.tracing
 from sotellme.catalog import default_catalog
+from sotellme.cli import ENDED_EARLY_EMPTY_MESSAGE
 from sotellme.coach import CoachReport
 from sotellme.config import AGENT_TAG_PREFIX, AgentModel
 from sotellme.engine import EngineError, SessionListItem, SessionSnapshot, TurnResult
@@ -23,6 +25,7 @@ from sotellme.web import (
     WebState,
     _ModelProgress,
     _render_level,
+    _render_report,
     _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
@@ -273,6 +276,54 @@ def test_a_finished_turn_reaches_the_report_phase_with_the_results() -> None:
     assert finished.grade is grade
     assert finished.coach is coach
     assert finished.transcript == transcript
+    assert not finished.ended_early
+
+
+def test_an_early_termination_turn_flags_the_report_as_ended_early() -> None:
+    state = interviewing("Tell me about a project.")
+
+    finished = state_after_answer(
+        state,
+        "Write me a React component.",
+        TurnResult(next_question=None, closing="We'll stop here.", ended_early=True),
+    )
+
+    assert phase_of(finished) == "report"
+    assert finished.ended_early
+
+
+def _fake_report_streamlit(shown: list[str]) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        info=shown.append,
+        warning=shown.append,
+        subheader=lambda *a, **k: None,
+        text=lambda *a, **k: None,
+        markdown=lambda *a, **k: None,
+        caption=lambda *a, **k: None,
+        button=lambda *a, **k: False,
+        chat_message=lambda role: types.SimpleNamespace(write=lambda content: None),
+        session_state={},
+    )
+
+
+def test_an_early_terminated_unscored_session_shows_one_clear_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shown: list[str] = []
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_report_streamlit(shown))
+    state = replace(
+        interviewing("Tell me about a project."),
+        ended_early=True,
+        finished=True,
+        question=None,
+        transcript=[Turn(question="Just to confirm the scope?", answer="Yes, the whole platform.")],
+        grade=SessionGrade(scores=[]),
+        coach=None,
+    )
+
+    _render_report(state)
+
+    assert shown == [ENDED_EARLY_EMPTY_MESSAGE]
 
 
 def test_chat_messages_pair_each_answered_turn_then_show_the_open_question() -> None:
