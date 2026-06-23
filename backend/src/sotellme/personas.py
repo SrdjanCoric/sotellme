@@ -37,6 +37,11 @@ class Persona(BaseModel):
     profile: str
     base_behavior: AnswerBehavior
     planted_turns: list[PlantedTurn] = Field(default_factory=list)
+    expected_to_terminate: bool = Field(
+        default=False,
+        description="Whether the guardrail is expected to terminate this persona's interview; "
+        "a clean termination is scored a pass and the coverage judge is skipped.",
+    )
 
     def behavior_for(self, turn: int) -> AnswerBehavior:
         """Return the answer behavior for a question turn."""

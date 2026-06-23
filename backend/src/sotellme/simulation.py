@@ -294,8 +294,31 @@ class SessionJudgement(BaseModel):
     dimension_means: dict[str, float] = {}
 
 
-def judge_session(judge: Judge, session: SimulatedSession) -> SessionJudgement:
-    """Judge every question in a simulated session and its overall coverage."""
+TERMINATED_AS_EXPECTED_RATIONALE = (
+    "Persona expected to be terminated by the guardrail and was; coverage not judged on the "
+    "intentionally truncated transcript."
+)
+
+
+def judge_session(
+    judge: Judge, session: SimulatedSession, expected_to_terminate: bool = False
+) -> SessionJudgement:
+    """Judge every question in a simulated session and its overall coverage.
+
+    When the persona is expected to be terminated by the guardrail and the session ended that
+    way, the truncated transcript is the intended outcome: score it a pass and skip the judge
+    rather than penalizing the (correctly) thin coverage.
+    """
+    if expected_to_terminate and session.finished_reason == "terminated":
+        return SessionJudgement(
+            persona=session.persona,
+            target_level=session.target_level,
+            questions=[],
+            coverage=CoverageVerdict(
+                competencies=[], rationale=TERMINATED_AS_EXPECTED_RATIONALE, verdict="good"
+            ),
+            dimension_means={},
+        )
     judged = [
         JudgedQuestion(
             question=record.question,

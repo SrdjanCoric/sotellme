@@ -169,7 +169,9 @@ def run_simulation_experiment(
             raise GradingError(exc.diagnostic()) from exc
         write_session_artifact(session, artifacts_dir)
         try:
-            judgement = judge_session(judge, session)
+            judgement = judge_session(
+                judge, session, expected_to_terminate=persona.expected_to_terminate
+            )
         except JudgeError as exc:
             raise JudgeError(exc.diagnostic()) from exc
         return {"session": session.model_dump(), "judgement": judgement.model_dump()}
