@@ -5,7 +5,13 @@ from stubs import StubChatModel
 
 from sotellme.assessor import StarFlags
 from sotellme.eval_datasets import ExpectedAnswer, disagreements
-from sotellme.grader import AnswerScore, GradingError, SessionGrade, grade_session
+from sotellme.grader import (
+    AnswerScore,
+    GradingError,
+    SessionGrade,
+    SkippedTurn,
+    grade_session,
+)
 from sotellme.interviewer import Turn
 
 _STAR_NAMES = ("situation", "task", "action", "result", "quantified_result")
@@ -24,6 +30,7 @@ def _expected(star: tuple[bool, ...], weak: list[str]) -> ExpectedAnswer:
 def _graded(star: tuple[bool, ...], weak: list[str]) -> AnswerScore:
     return AnswerScore(
         question="q",
+        turn_index=1,
         star=StarFlags(**dict(zip(_STAR_NAMES, star, strict=True))),
         specificity="high",
         ownership="clear",
@@ -34,9 +41,10 @@ def _graded(star: tuple[bool, ...], weak: list[str]) -> AnswerScore:
     )
 
 
-def complete_score(question: str) -> AnswerScore:
+def complete_score(question: str, turn_index: int = 1) -> AnswerScore:
     return AnswerScore(
         question=question,
+        turn_index=turn_index,
         star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
         specificity="high",
         ownership="clear",
@@ -45,6 +53,27 @@ def complete_score(question: str) -> AnswerScore:
         rationale="Complete, quantified, single-team story that lands at the target level.",
         score=5,
     )
+
+
+def test_session_grade_records_skipped_clarifying_turns() -> None:
+    grade = SessionGrade(
+        scores=[complete_score("Tell me about the migration.")],
+        skipped=[
+            SkippedTurn(
+                turn_index=2,
+                question="Did you mean the first or second migration?",
+                reason="Clarifying question; no STAR substance to score.",
+            )
+        ],
+    )
+
+    assert grade.skipped[0].turn_index == 2
+
+
+def test_session_grade_skipped_defaults_to_empty() -> None:
+    grade = SessionGrade(scores=[complete_score("Tell me about the migration.")])
+
+    assert grade.skipped == []
 
 
 def test_disagreements_tolerates_a_weak_flag_on_a_present_element() -> None:
@@ -68,9 +97,26 @@ def test_disagreements_requires_every_labeled_weak_element() -> None:
     assert "weak_or_missing" in disagreements(graded, expected)
 
 
+def test_answer_score_carries_the_transcript_turn_it_grades() -> None:
+    answer = AnswerScore(
+        question="Tell me about the migration.",
+        turn_index=3,
+        star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
+        specificity="high",
+        ownership="clear",
+        weak_or_missing=[],
+        gap="",
+        rationale="A complete, quantified story at the target level.",
+        score=5,
+    )
+
+    assert answer.turn_index == 3
+
+
 def test_answer_score_accepts_not_applicable_ownership() -> None:
     answer = AnswerScore(
         question="Why do you want to work here?",
+        turn_index=1,
         star=StarFlags(
             situation=False, task=False, action=False, result=False, quantified_result=False
         ),
@@ -89,6 +135,7 @@ def test_answer_score_requires_a_rationale() -> None:
     with pytest.raises(ValidationError):
         AnswerScore(  # type: ignore[call-arg]
             question="Tell me about the migration.",
+            turn_index=1,
             star=StarFlags(
                 situation=False, task=False, action=False, result=False, quantified_result=False
             ),
@@ -103,6 +150,7 @@ def test_answer_score_requires_a_rationale() -> None:
 def _scored(score: int, gap: str) -> AnswerScore:
     return AnswerScore(
         question="Tell me about the migration.",
+        turn_index=1,
         star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
         specificity="high",
         ownership="clear",
@@ -169,6 +217,40 @@ def test_grade_session_retries_a_transient_structured_output_failure() -> None:
 
     assert result == grade
     assert model.structured_calls == 2
+
+
+def test_grade_session_accepts_a_grade_that_records_a_skipped_turn() -> None:
+    transcript = [
+        Turn(question="Tell me about the migration.", answer="I led it; latency fell 40%."),
+        Turn(question="Did you mean the first or the second?", answer="The second one."),
+    ]
+    grade = SessionGrade(
+        scores=[complete_score(transcript[0].question, turn_index=1)],
+        skipped=[
+            SkippedTurn(
+                turn_index=2,
+                question=transcript[1].question,
+                reason="Clarifying question; no STAR substance to score.",
+            )
+        ],
+    )
+    model = StubChatModel(structured_response=grade)
+
+    result = grade_session(transcript, "senior", model)
+
+    assert result == grade
+
+
+def test_grade_session_rejects_a_grade_that_leaves_a_turn_unaccounted() -> None:
+    transcript = [
+        Turn(question="Tell me about the migration.", answer="I led it; latency fell 40%."),
+        Turn(question="Did you mean the first or the second?", answer="The second one."),
+    ]
+    grade = SessionGrade(scores=[complete_score(transcript[0].question, turn_index=1)])
+    model = StubChatModel(structured_response=grade)
+
+    with pytest.raises(GradingError):
+        grade_session(transcript, "senior", model)
 
 
 def test_grade_session_raises_grading_error_when_the_output_does_not_validate() -> None:

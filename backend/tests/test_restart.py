@@ -78,6 +78,7 @@ def stub_grader(transcript, target_level):
         scores=[
             AnswerScore(
                 question=turn.question,
+                turn_index=index,
                 star=StarFlags(
                     situation=True, task=True, action=True, result=True, quantified_result=True
                 ),
@@ -88,7 +89,7 @@ def stub_grader(transcript, target_level):
                 rationale="Complete STAR with a measured outcome at the target level.",
                 score=4,
             )
-            for turn in transcript
+            for index, turn in enumerate(transcript, start=1)
         ]
     )
 

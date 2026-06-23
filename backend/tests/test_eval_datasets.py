@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from sotellme.assessor import StarFlags
 from sotellme.eval_datasets import (
     DEFAULT_LANGFUSE_TIMEOUT,
     EvalContext,
@@ -10,6 +11,22 @@ from sotellme.eval_datasets import (
     build_items,
     dataset_specs,
 )
+from sotellme.grader import AnswerScore, SessionGrade, SkippedTurn
+
+
+def _turn_score(turn_index: int, score: int) -> AnswerScore:
+    return AnswerScore(
+        question=f"Turn {turn_index} question.",
+        turn_index=turn_index,
+        star=StarFlags(situation=True, task=True, action=True, result=True, quantified_result=True),
+        specificity="high",
+        ownership="clear",
+        weak_or_missing=[],
+        gap="" if score == 5 else "One refinement short of a five.",
+        rationale="A complete, quantified story at the target level.",
+        score=score,
+    )
+
 
 EVALS_DIR = Path(__file__).parent.parent / "evals"
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -79,6 +96,41 @@ def test_grader_single_answer_case_maps_to_a_labelled_item() -> None:
     assert item.id == "sotellme-grader:complete-quantified-single-team-senior"
 
 
+def test_grader_transcript_agreement_maps_scores_by_turn_index_past_a_skip() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(
+        scores=[_turn_score(1, 3), _turn_score(3, 4)],
+        skipped=[SkippedTurn(turn_index=2, question="First or second?", reason="Clarifying.")],
+    )
+    expected = {"senior_floor_turns": [3], "senior_ceiling_turns": [1]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 1.0
+
+
+def test_grader_transcript_agreement_flags_a_scored_clarifying_turn() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(scores=[_turn_score(1, 4), _turn_score(2, 3)])
+    expected = {"senior_floor_turns": [1], "clarifying_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 0.0
+    assert "clarifying" in result.comment
+
+
+def test_grader_transcript_agreement_flags_a_turn_scored_twice() -> None:
+    spec = dataset_specs()["grader"]
+    grade = SessionGrade(scores=[_turn_score(2, 4), _turn_score(2, 4)])
+    expected = {"senior_floor_turns": [2]}
+
+    [result] = spec.evaluate(grade.model_dump(), expected, {"kind": "transcript"})
+
+    assert result.value == 0.0
+    assert "duplicate" in result.comment
+
+
 def _grader_cases() -> list[dict[str, Any]]:
     document = json.loads((EVALS_DIR / "grader_cases.json").read_text())
     return cast(list[dict[str, Any]], document["cases"])
@@ -132,6 +184,26 @@ def test_confidentiality_case_judges_specificity_on_what_was_described() -> None
     assert proposed["score"] >= 3
 
 
+def test_clarifying_turn_case_pins_a_skipped_turn_disjoint_from_the_scored_ones() -> None:
+    case = _case_named("clarifying-turn-skipped-senior-session")
+    clarifying = set(case["clarifying_turns"])
+    scored = set(case.get("senior_floor_turns", [])) | set(case.get("senior_ceiling_turns", []))
+    turn_count = len(case["turns"])
+
+    assert clarifying
+    assert all(1 <= turn <= turn_count for turn in clarifying)
+    assert not (clarifying & scored), "a turn cannot be both skipped and scored"
+
+
+def test_clarifying_turns_map_through_the_spec_into_the_expectation() -> None:
+    spec = dataset_specs()["grader"]
+    case = _case_named("clarifying-turn-skipped-senior-session")
+
+    [item] = spec.to_items([case], CTX)
+
+    assert item.expected_output["clarifying_turns"] == case["clarifying_turns"]
+
+
 def test_a_case_label_never_leaks_into_the_dataset_input() -> None:
     spec = dataset_specs()["grader"]
     case = {
@@ -151,6 +223,7 @@ def test_a_case_label_never_leaks_into_the_dataset_input() -> None:
 def _answer_score(score: int, weak: list[str] | None = None) -> dict[str, Any]:
     return {
         "question": "Tell me about a project you're proud of.",
+        "turn_index": 1,
         "rationale": "r",
         "star": {
             "situation": True,

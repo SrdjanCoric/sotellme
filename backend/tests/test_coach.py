@@ -33,6 +33,7 @@ def a_grade() -> SessionGrade:
         scores=[
             AnswerScore(
                 question="Tell me about the migration.",
+                turn_index=1,
                 star=StarFlags(
                     situation=True, task=True, action=True, result=False, quantified_result=False
                 ),

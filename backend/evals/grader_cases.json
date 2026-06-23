@@ -1,5 +1,5 @@
 {
- "description": "Answers the end-of-session grader must score, each graded against its target level. HUMAN-RECONCILED LABELS (the Phase 5 [verify] task): each label was walked case by case against the grader's rationale; where the grader read the rubric right the label was corrected, where the grader was wrong the label was kept and the grader prompt fixed instead. Each case is one question and one answer in the synthetic candidate's voice (Helioscope / Dunav Logistics). The labels carry the STAR evidence flags, specificity (low/medium/high), ownership (clear/mixed/unclear), the STAR elements left weak or missing, a one-sentence gap, and an overall 1-5 score at the target level; score is checked within +/-1 since it is the most subjective field. The gap obeys the grader's visible-deduction rule: it is non-empty for every score below 5 and empty only on a 5, so no sub-5 carries a silent deduction. The set spans the score range, STAR completeness, the I-vs-we line, leveling mismatches (complete stories that land below their target level), the 4-vs-3 boundary (a refinement-only gap is a 4, a real miss is a 3), deference judged by what was the candidate's to own (a small-team product call deferred to a boss is not docked when the candidate owns the execution), a light confidentiality carve-out (proprietary detail withheld but described in general terms is judged on what was described), and non-STAR answers (ongoing work, motivation, a clarifying reply) that are graded for what they are, not docked for a Result they never had. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
+ "description": "Answers the end-of-session grader must score, each graded against its target level. HUMAN-RECONCILED LABELS (the Phase 5 [verify] task): each label was walked case by case against the grader's rationale; where the grader read the rubric right the label was corrected, where the grader was wrong the label was kept and the grader prompt fixed instead. Each case is one question and one answer in the synthetic candidate's voice (Helioscope / Dunav Logistics). The labels carry the STAR evidence flags, specificity (low/medium/high), ownership (clear/mixed/unclear), the STAR elements left weak or missing, a one-sentence gap, and an overall 1-5 score at the target level; score is checked within +/-1 since it is the most subjective field. The gap obeys the grader's visible-deduction rule: it is non-empty for every score below 5 and empty only on a 5, so no sub-5 carries a silent deduction. The set spans the score range, STAR completeness, the I-vs-we line, leveling mismatches (complete stories that land below their target level), the 4-vs-3 boundary (a refinement-only gap is a 4, a real miss is a 3), deference judged by what was the candidate's to own (a small-team product call deferred to a boss is not docked when the candidate owns the execution), a light confidentiality carve-out (proprietary detail withheld but described in general terms is judged on what was described), non-STAR answers (ongoing work, motivation) that are graded for what they are, not docked for a Result they never had, and clarifying or confirmation turns that are not STAR-gradeable answers at all, so the grader records them in `skipped` rather than scoring them. Synthetic data is a stopgap; see plans/decisions/evals-and-observability.md.",
  "cases": [
   {
    "name": "complete-quantified-single-team-senior",
@@ -210,21 +210,6 @@
    "note": "A motivation answer with no grounding; could be said to any company."
   },
   {
-   "name": "short-clarifying-reply-mid",
-   "question": "Did you mean the first migration or the second one?",
-   "answer": "The second one, the Kafka streaming migration in 2023.",
-   "target_level": "mid",
-   "proposed": {
-    "star": {"situation": false, "task": false, "action": false, "result": false, "quantified_result": false},
-    "specificity": "medium",
-    "ownership": "not_applicable",
-    "weak_or_missing": [],
-    "gap": "A brief clarifying reply; there is little here to judge beyond the answer to the question.",
-    "score": 3
-   },
-   "note": "A short clarifying reply, graded for what it is; not a story, so not docked for missing STAR."
-  },
-  {
    "name": "solid-mid-story",
    "question": "Tell me about a time you improved how your team works.",
    "answer": "On my team's CI the integration tests were flaky and people had stopped trusting them, so failures got rubber-stamped. I was asked to stabilize the suite before our quarterly release. I rewrote the harness to isolate state between runs and added detection that flagged genuinely flaky tests separately from real failures, then documented the patterns for the team. Flaky failures dropped from about fifteen a week to two and people started trusting the suite again.",
@@ -329,6 +314,32 @@
     {
      "question": "You said the shared hosting space presents interesting problems even though it's new to you. How do you imagine things like rebootless kernel patching or automated caching actually help a web hosting provider lower their technical support load?",
      "answer": "So pretty straightforward. Whenever we have a security call, you need to patch your kernel, but that would mean the whole host will be down. The old server will be down, which means all websites that are hosted on that server would be down. Now, if you can do it rebootless, like you don't have to reboot the kernel to make that patch, that would mean the sites will be live, so you don't have to schedule downtime. That's one thing for caching. Caching speeds everything up and uses less resources, and you want to cache things so you don't use those resources. Now, automatic caching means that users don't have to call you to set up caching, but it's done automatically, so that reduces the technical support."
+    }
+   ]
+  },
+  {
+   "name": "clarifying-turn-skipped-senior-session",
+   "target_level": "senior",
+   "note": "Pins task 0035: a pure clarifying turn (turn 2) is not a STAR-gradeable answer, so the grader does not score it - it records it in skipped. Only the substantive turns are scored. clarifying_turns lists the turn the grader must NOT score; senior_floor_turns are the substantive turns expected to score at least 4. The candidate's turn-2 reply only disambiguates which migration the interviewer meant; there is no work of its own to grade. Turn indices are 1-based.",
+   "senior_floor_turns": [
+    1,
+    3
+   ],
+   "clarifying_turns": [
+    2
+   ],
+   "turns": [
+    {
+     "question": "Tell me about a migration you owned end to end.",
+     "answer": "Our nightly batch pipeline at Helioscope was missing its freshness SLA as volume grew, so dashboards were hours stale and the data team had stopped trusting them. I owned moving it to a streaming model: I designed the Kafka topology, wrote the consumers in Go, and ran the new path in shadow against the batch numbers for a week before cutting over. End-to-end latency dropped from about four hours to under ninety seconds and the staleness pages stopped."
+    },
+    {
+     "question": "Did you mean the first migration or the second one?",
+     "answer": "The second one, the Kafka streaming migration in 2023."
+    },
+    {
+     "question": "What did you personally do to keep data integrity through that cutover?",
+     "answer": "I built a reconciliation check that replayed a day of events through both the batch and the streaming path and diffed the outputs key by key, so any drift showed up before we trusted the new numbers. I also added idempotent consumer offsets so a replay couldn't double-count, and I kept the batch path running in parallel until the diff was clean for a full week."
     }
    ]
   }

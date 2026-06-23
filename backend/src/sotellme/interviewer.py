@@ -49,8 +49,17 @@ def render_profile(profile: CandidateProfile) -> str:
     return "\n".join(sections)
 
 
-def render_transcript(transcript: Sequence[Turn]) -> str:
-    """Render interview turns into a Q/A plain-text transcript."""
+def render_transcript(transcript: Sequence[Turn], *, numbered: bool = False) -> str:
+    """Render interview turns into a Q/A plain-text transcript.
+
+    With ``numbered`` set, each turn is labeled 'Turn N' so the grader can anchor a score
+    or a skip to a specific turn.
+    """
+    if numbered:
+        return "\n\n".join(
+            f"Turn {index}\nQ: {turn.question}\nA: {turn.answer}"
+            for index, turn in enumerate(transcript, start=1)
+        )
     return "\n".join(f"Q: {turn.question}\nA: {turn.answer}" for turn in transcript)
 
 

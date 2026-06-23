@@ -84,8 +84,10 @@ def format_score_summary(grade: SessionGrade) -> str:
     if not grade.scores:
         return NO_SCORES_MESSAGE
     blocks: list[str] = []
-    for index, answer in enumerate(grade.scores, start=1):
-        lines = [f"{index}. [{answer.score}/5] {_truncate_question(answer.question)}"]
+    for answer in grade.scores:
+        lines = [
+            f"turn {answer.turn_index}: [{answer.score}/5] {_truncate_question(answer.question)}"
+        ]
         credibility = f"   specificity: {answer.specificity}"
         if answer.ownership != "not_applicable":
             credibility += f" · ownership: {answer.ownership}"
@@ -96,7 +98,15 @@ def format_score_summary(grade: SessionGrade) -> str:
         if answer.gap:
             lines.append(f"   {answer.gap}")
         blocks.append("\n".join(lines))
-    return "\n\n".join(blocks)
+    summary = "\n\n".join(blocks)
+    if grade.skipped:
+        skipped = ["Skipped (not scored):"]
+        for turn in grade.skipped:
+            skipped.append(
+                f"   turn {turn.turn_index}: {_truncate_question(turn.question)} — {turn.reason}"
+            )
+        summary += "\n\n" + "\n".join(skipped)
+    return summary
 
 
 def format_report_list(reports: Sequence[Path]) -> str:
