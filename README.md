@@ -1,19 +1,13 @@
 # sotellme
 
-A mock behavioral interviewer that runs in your terminal, built from your CV and the
-job you're actually chasing.
+A mock behavioral interviewer built from your CV and the job you're chasing. It runs in
+your browser, or in your terminal if you want.
 
 ## Why I built it
 
 I built this because behavioral interviews are where good candidates trip up. The
 questions sound easy, so most people wing them, and the usual prep ("tell me about a
 time you failed") is too generic to help with the specific job in front of you.
-
-sotellme makes the practice specific. You give it your CV and a job posting, it reads
-up on the company, and then it interviews you against all three at once, so when it
-asks why you want the role it can name the product you'd actually be building. At the
-end it grades every answer and walks you through the weak ones: what went wrong, and
-what to say instead.
 
 ## What it does
 
@@ -22,10 +16,9 @@ a short brief it builds on the company from a handful of public pages. It runs t
 session the way a real interviewer would: it opens on who you are, digs into your biggest
 piece of work, picks the stories that fit the role, and chases the interesting thread in
 your last answer rather than marching through a checklist. Most sessions run 8 to 14
-questions. When you're done, the smart model reads the whole transcript and scores every
-answer on STAR structure, specificity, and ownership against your target level, then
-writes you a Markdown report: a scorecard that names what's weak, a fix for each soft
-answer, and a short study plan. It also tells you what the run cost.
+questions. When you're done, it reads the whole transcript and scores every answer on
+STAR structure, specificity, and ownership against your target level, then writes you a
+Markdown report with a fix for each soft answer, and a short study plan.
 
 ## Quickstart
 
@@ -64,13 +57,13 @@ starts a new line; Esc then Enter sends, or put `/done` on its own line.
 
 ### Commands
 
-| Command | What it does |
-| --- | --- |
-| `sotellme interview --cv <path> [--job <link\|file\|text>]` | Start a new interview session. |
-| `sotellme resume` | Pick up the latest interrupted session. |
-| `sotellme reports` | List the coaching reports in this directory, newest first. |
+| Command                                                                 | What it does                                                                                                      |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `sotellme interview --cv <path> [--job <link\|file\|text>]`             | Start a new interview session.                                                                                    |
+| `sotellme resume`                                                       | Pick up the latest interrupted session.                                                                           |
+| `sotellme reports`                                                      | List the coaching reports in this directory, newest first.                                                        |
 | `sotellme grade <transcript.json> --level <junior\|mid\|senior\|staff>` | Grade a transcript you already have (a JSON list of `{question, answer}` pairs) without running a live interview. |
-| `sotellme web` | Launch the local web UI in your browser (needs the `web` extra). |
+| `sotellme web`                                                          | Launch the local web UI in your browser (needs the `web` extra).                                                  |
 
 `interview`, `resume`, and `grade` also take `--provider`, `--fast-model`, and
 `--smart-model` to override the model picks.
@@ -84,13 +77,6 @@ session, truncated per page, and refused for localhost and private addresses. Yo
 is read only by the code that calls the provider and never goes into a prompt, so no
 hostile page or posting can talk the model into leaking it (`tests/test_fetch.py`,
 `tests/test_secret_isolation.py`, `tests/test_injection.py`).
-
-A cap on questions, a guaranteed closing question, a ceiling on web fetches, and a token
-budget that ends a long session early are all plain code, and they're unit-tested. The
-tool also screens what you type before it reaches the interview: trying to steer or
-manipulate the session ends it on the spot, while simply going off-topic nudges you back
-once and a second off-topic reply in a row wraps the session up. Either way the real
-answers you gave still get graded.
 
 ## Configuration
 
@@ -109,8 +95,7 @@ plus the end-of-session grader and coach. In the CLI you set those two slots wit
 `SOTELLME_FAST_MODEL` / `SOTELLME_SMART_MODEL` or the matching flags. The web app goes
 finer: its Advanced section pins a model to each step on its own, so you can put a cheap
 one on the company research and a stronger one on the questions and the grading, and mix
-providers once you've set more than one key. The eval suites run against `google_genai`
-with an `anthropic` judge, which is the combo I'd reach for.
+providers once you've set more than one key.
 
 Both draw their choices from the same catalog, which ships the per-provider defaults in
 the table above. To change what's on offer, write a `~/.sotellme/models.toml` listing the
@@ -165,10 +150,9 @@ Langfuse client in `tracing`. Export `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY
 uvx --from "sotellme[web,tracing]" sotellme web
 ```
 
-Every agent step in that session lands as a trace. Leave the variables unset and the app
-never reaches for Langfuse.
+Every agent step in that session shows up as a trace.
 
-The questions the system asks get their own eval. `scripts/simulate.py` runs a full
+The questions themselves get their own eval. `scripts/simulate.py` runs a full
 interview against a synthetic candidate: the real interviewer and director loop ask, while
 a candidate-simulator answers in character from a persona under `evals/personas/`. The
 personas span every level from junior to staff and a mix of answering styles, complete
@@ -188,15 +172,15 @@ Before a run it estimates the cost across the chosen personas and the judge pass
 asks first for anything over $3.50; pass `--yes` to skip the prompt in a script. Each
 persona is a Langfuse dataset item tagged with its level and answer mix, so the
 question-quality scores compare run to run and slice by both, and the session transcripts
-land under `evals/sessions/`. The personas are synthetic, the same PII rule as everything
-else.
+are written to `evals/sessions/`. The personas are synthetic, under the same PII rule as
+everything else.
 
 Re-tuning the grader or coach doesn't mean paying for those interviews again.
 `scripts/simulate.py replay` forks each stored session at the checkpoint just before
 grading and re-runs only grade and coach with the current code, so the interviewer,
 director, and simulated answers never fire. It rewrites the `evals/sessions/` artifacts in
-place and prints a per-persona before/after score delta plus the cost, which is the
-feedback pass alone. A session that hit the turn cap without closing has no pre-grade
+place and prints a per-persona before/after score delta plus the cost of that feedback
+pass alone. A session that hit the turn cap without closing has no pre-grade
 checkpoint to fork, so it's reported and skipped instead of erroring.
 
 ```sh
