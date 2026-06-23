@@ -112,3 +112,14 @@ def test_fetched_pages_are_framed_as_untrusted_data() -> None:
     system_text = model.seen_message_lists[0][0].text.lower()
     assert "data" in system_text
     assert "not instructions" in system_text
+
+
+def test_the_research_loop_runs_under_the_no_invention_prompt() -> None:
+    """build_company_brief composes the brief under the grounding-strengthened system prompt."""
+    model = ToolLoopStubModel(script=[fetch_request("https://acme.com"), AIMessage(BRIEF)])
+
+    build_company_brief(POSTING, CONTEXT, model, RecordingFetcher())
+
+    system_text = model.seen_message_lists[-1][0].text.lower()
+    assert "never invent" in system_text
+    assert "posting's own topics" in system_text

@@ -56,7 +56,7 @@ from sotellme.pricing import (
 )
 from sotellme.profile import ProfileParseError, parse_candidate_profile
 from sotellme.report import list_reports, write_report
-from sotellme.research import build_company_brief
+from sotellme.research import PageFetcher, build_company_brief
 from sotellme.role import RoleContext, RoleContextError, TargetLevel, build_role_context
 from sotellme.tracing import TracingError, langfuse_callbacks
 
@@ -353,12 +353,14 @@ def _build_role_builder(config: ModelConfig) -> RoleBuilder:
     return lambda posting_text: build_role_context(posting_text, model, provider)
 
 
-def _build_researcher(config: ModelConfig) -> Researcher:
+def _build_researcher(
+    config: ModelConfig, fetcher: PageFetcher = fetch_research_page
+) -> Researcher:
     """Build a company researcher bound to the configured researcher model and page fetcher"""
     model = build_chat_model(config, "researcher")
 
     def research(posting_text: str, context: RoleContext) -> str:
-        return build_company_brief(posting_text, context, model, fetch_research_page)
+        return build_company_brief(posting_text, context, model, fetcher)
 
     return research
 
@@ -397,6 +399,7 @@ def build_engine(
     data_dir: Path | None = None,
     director: Director | None = None,
     interviewer: Interviewer | None = None,
+    fetcher: PageFetcher = fetch_research_page,
 ) -> InterviewEngine:
     """Assemble an InterviewEngine with all agents wired from the model configuration."""
     return InterviewEngine(
@@ -406,7 +409,7 @@ def build_engine(
         director=director or _build_director(config),
         interviewer=interviewer or _build_interviewer(config),
         role_builder=_build_role_builder(config),
-        researcher=_build_researcher(config),
+        researcher=_build_researcher(config, fetcher),
         grader=_build_grader(config),
         coacher=_build_coacher(config),
         guardrail=_build_guardrail(config),

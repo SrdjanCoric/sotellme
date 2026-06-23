@@ -30,11 +30,19 @@ from sotellme.simulation import (
     confirm_run,
     estimate_run_cost,
     judge_session,
+    no_web_research,
     replay_sessions,
     simulate_session,
     write_persona_cv,
     write_session_artifact,
 )
+
+
+def test_no_web_research_refuses_every_fetch_so_briefs_stay_on_the_posting() -> None:
+    from sotellme.fetch import ResearchFetchError
+
+    with pytest.raises(ResearchFetchError):
+        no_web_research("https://meridiancloud.com")
 
 
 def _persona(**overrides: object) -> Persona:
