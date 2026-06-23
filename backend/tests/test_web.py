@@ -302,8 +302,8 @@ class _FakeTab:
     def __enter__(self) -> "_FakeTab":
         return self
 
-    def __exit__(self, *args: object) -> bool:
-        return False
+    def __exit__(self, *args: object) -> None:
+        return None
 
 
 def _fake_report_streamlit(
