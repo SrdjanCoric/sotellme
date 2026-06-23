@@ -6,13 +6,18 @@ from pathlib import Path
 import pytest
 
 import sotellme.tracing
+from sotellme.assessor import StarFlags
 from sotellme.catalog import default_catalog
-from sotellme.cli import ENDED_EARLY_EMPTY_MESSAGE
+from sotellme.cli import (
+    ENDED_EARLY_EMPTY_MESSAGE,
+    ENDED_EARLY_PARTIAL_MESSAGE,
+    NO_COACHING_MESSAGE,
+)
 from sotellme.coach import CoachReport
 from sotellme.config import AGENT_TAG_PREFIX, AgentModel
 from sotellme.engine import EngineError, SessionListItem, SessionSnapshot, TurnResult
 from sotellme.extraction import CVInputError
-from sotellme.grader import SessionGrade
+from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, ProfileParseError, Role
 from sotellme.role import RoleContextError
@@ -25,7 +30,6 @@ from sotellme.web import (
     WebState,
     _ModelProgress,
     _render_level,
-    _render_report,
     _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
@@ -35,6 +39,8 @@ from sotellme.web import (
     model_choices,
     phase_of,
     posting_to_resolve,
+    render_report_view,
+    resolve_report_view,
     resumable_state,
     save_upload,
     session_primary_line,
@@ -292,18 +298,116 @@ def test_an_early_termination_turn_flags_the_report_as_ended_early() -> None:
     assert finished.ended_early
 
 
-def _fake_report_streamlit(shown: list[str]) -> types.SimpleNamespace:
+class _FakeTab:
+    def __enter__(self) -> "_FakeTab":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+
+def _fake_report_streamlit(
+    shown: list[str], markdowns: list[str] | None = None
+) -> types.SimpleNamespace:
+    sink = markdowns if markdowns is not None else []
     return types.SimpleNamespace(
         info=shown.append,
         warning=shown.append,
         subheader=lambda *a, **k: None,
         text=lambda *a, **k: None,
-        markdown=lambda *a, **k: None,
+        markdown=lambda content="", *a, **k: sink.append(content),
         caption=lambda *a, **k: None,
         button=lambda *a, **k: False,
+        divider=lambda *a, **k: None,
+        tabs=lambda labels: [_FakeTab() for _ in labels],
         chat_message=lambda role: types.SimpleNamespace(write=lambda content: None),
         session_state={},
     )
+
+
+def _scored_grade() -> SessionGrade:
+    return SessionGrade(
+        scores=[
+            AnswerScore(
+                question="Tell me about a project.",
+                turn_index=1,
+                rationale="Specific, owned, quantified.",
+                star=StarFlags(
+                    situation=True, task=True, action=True, result=True, quantified_result=True
+                ),
+                specificity="high",
+                ownership="clear",
+                weak_or_missing=[],
+                gap="",
+                score=5,
+            )
+        ]
+    )
+
+
+def _coach_report() -> CoachReport:
+    return CoachReport(
+        summary="Strong, specific answers.", answer_advice=[], drills=[], study_plan="Keep going."
+    )
+
+
+def _report_state(
+    *, grade: SessionGrade, coach: CoachReport | None, ended_early: bool = False
+) -> WebState:
+    return replace(
+        interviewing("Tell me about a project."),
+        question=None,
+        finished=True,
+        ended_early=ended_early,
+        closing="Thanks for walking me through it.",
+        grade=grade,
+        coach=coach,
+        transcript=[Turn(question="Tell me about a project.", answer="I led the migration.")],
+    )
+
+
+def test_a_full_session_resolves_to_coaching_with_no_banner() -> None:
+    view = resolve_report_view(_report_state(grade=_scored_grade(), coach=_coach_report()))
+
+    assert view.coaching is not None
+    assert view.warning is None
+    assert view.notice is None
+
+
+def test_an_early_terminated_unscored_session_resolves_to_the_empty_notice() -> None:
+    view = resolve_report_view(
+        _report_state(grade=SessionGrade(scores=[]), coach=None, ended_early=True)
+    )
+
+    assert view.coaching is None
+    assert view.warning is None
+    assert view.notice == ENDED_EARLY_EMPTY_MESSAGE
+
+
+def test_an_early_terminated_scored_session_warns_but_still_coaches() -> None:
+    view = resolve_report_view(
+        _report_state(grade=_scored_grade(), coach=_coach_report(), ended_early=True)
+    )
+
+    assert view.coaching is not None
+    assert view.warning == ENDED_EARLY_PARTIAL_MESSAGE
+    assert view.notice is None
+
+
+def test_a_finished_session_without_coaching_resolves_to_the_no_coaching_notice() -> None:
+    view = resolve_report_view(_report_state(grade=SessionGrade(scores=[]), coach=None))
+
+    assert view.coaching is None
+    assert view.warning is None
+    assert view.notice == NO_COACHING_MESSAGE
+
+
+def test_a_scored_session_whose_coaching_failed_warns_and_falls_back() -> None:
+    view = resolve_report_view(_report_state(grade=_scored_grade(), coach=None, ended_early=True))
+
+    assert view.coaching is None
+    assert view.warning == ENDED_EARLY_PARTIAL_MESSAGE
+    assert view.notice == NO_COACHING_MESSAGE
 
 
 def test_an_early_terminated_unscored_session_shows_one_clear_message(
@@ -321,9 +425,22 @@ def test_an_early_terminated_unscored_session_shows_one_clear_message(
         coach=None,
     )
 
-    _render_report(state)
+    render_report_view(state)
 
     assert shown == [ENDED_EARLY_EMPTY_MESSAGE]
+
+
+def test_a_full_report_renders_the_coaching_summary_and_no_banners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shown: list[str] = []
+    markdowns: list[str] = []
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_report_streamlit(shown, markdowns))
+
+    render_report_view(_report_state(grade=_scored_grade(), coach=_coach_report()))
+
+    assert "Strong, specific answers." in markdowns
+    assert shown == []
 
 
 def test_chat_messages_pair_each_answered_turn_then_show_the_open_question() -> None:
