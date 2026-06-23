@@ -8,6 +8,7 @@ level and answer type (carried as dataset-item metadata). Synthetic data only.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from threading import Lock
@@ -27,6 +28,7 @@ from sotellme.pricing import ModelUsage, format_cost_summary, merge_usage, summa
 from sotellme.role import TargetLevel
 from sotellme.simulation import (
     judge_session,
+    persona_checkpoint_dir,
     run_persona_simulation,
     write_session_artifact,
 )
@@ -117,6 +119,7 @@ def run_simulation_experiment(
     limit: int | None = None,
     persona_names: set[str] | None = None,
     dataset_name: str = PERSONA_DATASET_NAME,
+    max_concurrency: int = 50,
 ) -> str:
     """Run each persona as a full simulated interview and judge it as a Langfuse experiment.
 
@@ -137,6 +140,7 @@ def run_simulation_experiment(
         limit: Optional cap on how many personas to run.
         persona_names: Persona names to run; None runs all.
         dataset_name: Name of the persona dataset to run.
+        max_concurrency: Maximum number of personas interviewed concurrently.
 
     Returns:
         The formatted experiment result followed by a cost summary.
@@ -160,7 +164,7 @@ def run_simulation_experiment(
     running_usd = [0.0]
     collected_usage: list[dict[str, ModelUsage]] = []
 
-    def task(*, item: Any, **_: Any) -> dict[str, Any]:
+    def simulate_persona(item: Any) -> dict[str, Any]:
         persona = Persona.model_validate(item.input)
         index = order[persona.name]
         progress.start(index, persona.name)
@@ -176,7 +180,13 @@ def run_simulation_experiment(
 
         try:
             session = run_persona_simulation(
-                persona, simulator, config, persona_callbacks, data_dir, cv_dir, max_turns
+                persona,
+                simulator,
+                config,
+                persona_callbacks,
+                persona_checkpoint_dir(data_dir, persona.name),
+                cv_dir,
+                max_turns,
             )
         except GradingError as exc:
             raise GradingError(exc.diagnostic()) from exc
@@ -203,6 +213,14 @@ def run_simulation_experiment(
         )
         return {"session": session.model_dump(), "judgement": judgement.model_dump()}
 
+    async def task(*, item: Any, **_: Any) -> dict[str, Any]:
+        # run_experiment schedules every task on one event loop under a max_concurrency
+        # semaphore; a synchronous task would block that loop and force the personas to run
+        # serially. Offloading the blocking interview to a worker thread lets the semaphore
+        # actually interleave them. Each persona's budget and checkpoint DB are isolated, and
+        # the running total is lock-guarded, so the threads do not contend.
+        return await asyncio.to_thread(simulate_persona, item)
+
     def evaluator(*, output: Any, **_: Any) -> list[Evaluation]:
         judgement = output["judgement"]
         scores = [
@@ -225,6 +243,7 @@ def run_simulation_experiment(
         data=items,
         task=task,
         evaluators=[evaluator],
+        max_concurrency=max_concurrency,
     )
     client.flush()
     cost = format_cost_summary(summarize_actual_cost(merge_usage(collected_usage), prices))

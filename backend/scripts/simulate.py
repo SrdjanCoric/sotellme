@@ -28,6 +28,7 @@ from sotellme.sim_datasets import (
     upload_persona_dataset,
 )
 from sotellme.simulation import (
+    EVAL_TYPICAL_TURNS,
     confirm_run,
     estimate_run_cost,
     format_run_cost,
@@ -81,8 +82,10 @@ def _run(args: argparse.Namespace) -> int:
     )
     prices = load_catalog(_data_dir()).prices
 
+    # Price the typical session, not the --max-turns cap: real runs wrap well before the cap, so
+    # estimating at the cap inflated the figure ~3.6x. The cap still bounds the worst case.
     estimate = estimate_run_cost(
-        len(personas), args.max_turns, config.fast_model, config.smart_model, prices
+        len(personas), EVAL_TYPICAL_TURNS, config.fast_model, config.smart_model, prices
     )
     print(format_run_cost(estimate))
     if not confirm_run(estimate, assume_yes=args.yes):
@@ -112,6 +115,7 @@ def _run(args: argparse.Namespace) -> int:
 
 def _replay(args: argparse.Namespace) -> int:
     from sotellme.cli import build_engine
+    from sotellme.engine import InterviewEngine
 
     personas = _selected_personas(args.persona)
     config = resolve_model_config(
@@ -122,16 +126,20 @@ def _replay(args: argparse.Namespace) -> int:
     )
     prices = load_catalog(_data_dir()).prices
     artifacts_dir = BACKEND / "evals" / "sessions"
+    checkpoints_dir = _data_dir() / "sim-checkpoints"
 
     if args.run_name:
         print(f"Replay: {args.run_name}")
-    engine = build_engine(
-        config, langfuse_callbacks(os.environ), data_dir=_data_dir() / "sim-checkpoints"
+    callbacks = langfuse_callbacks(os.environ)
+
+    def make_engine(data_dir: Path) -> InterviewEngine:
+        return build_engine(config, callbacks, data_dir=data_dir)
+
+    print(
+        replay_sessions(
+            make_engine, personas, checkpoints_dir, artifacts_dir, prices, stage=args.stage
+        )
     )
-    try:
-        print(replay_sessions(engine, personas, artifacts_dir, prices, stage=args.stage))
-    finally:
-        engine.close()
     print(f"Session artifacts refreshed under {artifacts_dir}")
     return 0
 
