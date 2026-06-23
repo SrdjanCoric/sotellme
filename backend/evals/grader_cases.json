@@ -342,6 +342,88 @@
      "answer": "I built a reconciliation check that replayed a day of events through both the batch and the streaming path and diffed the outputs key by key, so any drift showed up before we trusted the new numbers. I also added idempotent consumer offsets so a replay couldn't double-count, and I kept the batch path running in parallel until the diff was clean for a full week."
     }
    ]
+  },
+  {
+   "name": "declined-false-premise-skipped-senior-session",
+   "target_level": "senior",
+   "note": "Pins task 0036: turn 2 asks a substantive question resting on a false premise about the candidate's background (dedicated inference clusters they never worked on). The candidate declines and corrects the premise rather than answering, so the turn carries no work of its own to judge - the grader records it in declined/skipped, not a sub-5 with a 'nothing to score' gap. declined_turns lists the turn that must NOT be scored; senior_floor_turns are the substantive turns expected to score at least 4. Turn indices are 1-based.",
+   "senior_floor_turns": [
+    1,
+    3
+   ],
+   "declined_turns": [
+    2
+   ],
+   "turns": [
+    {
+     "question": "Tell me about a distributed system you took from design through production ownership.",
+     "answer": "At Meridian I owned our cross-region object store's metadata service end to end. Tail latency on listing was breaking our SLA as tenants grew, so I redesigned the index from a single Postgres table to a sharded LSM-backed service I wrote in Go, ran it in shadow against production reads for two weeks, and cut over region by region. P99 list latency fell from about 800ms to under 60ms and we stopped paging on it."
+    },
+    {
+     "question": "Out of everywhere you could take distributed storage work, why our dedicated inference clusters specifically?",
+     "answer": "That question assumes I've worked on dedicated inference clusters, which I haven't - that's not part of my background. If what you're really asking is why I've stayed in distributed storage and what draws me to this team, I'm glad to answer that instead."
+    },
+    {
+     "question": "Fair enough - then tell me about the hardest consistency problem you owned in that store.",
+     "answer": "Cross-region deletes were the worst of it. A delete acked in one region could race a read repair from another and resurrect the object. I moved us to tombstones with a per-key Lamport clock and a quorum read that honored the highest tombstone, then backfilled a year of keys behind a feature flag. After the rollout we went from a handful of resurrection incidents a quarter to none in the following six months."
+    }
+   ]
+  },
+  {
+   "name": "declined-already-answered-skipped-senior-session",
+   "target_level": "senior",
+   "note": "Pins task 0036: turn 2 asks about data integrity, which the candidate already covered substantively in the turn-1 migration story. The candidate truthfully points back to it and adds nothing new, so the turn carries no fresh work to judge - the grader skips it (declined_turns) rather than re-scoring the same content, and the earlier turn keeps its own score. Turn indices are 1-based.",
+   "senior_floor_turns": [
+    1
+   ],
+   "declined_turns": [
+    2
+   ],
+   "turns": [
+    {
+     "question": "Tell me about a migration you owned end to end, including how you kept it safe.",
+     "answer": "Our nightly batch pipeline at Helioscope was missing its freshness SLA, so I moved it to a Kafka streaming model: I designed the topology, wrote the Go consumers, and ran the new path in shadow for a week. For integrity I built a reconciliation check that replayed a day of events through both the batch and streaming paths and diffed the outputs key by key, added idempotent consumer offsets so a replay couldn't double-count, and kept the batch path running in parallel until the diff was clean for a full week. Latency dropped from about four hours to under ninety seconds."
+    },
+    {
+     "question": "What did you do specifically to protect data integrity through the cutover?",
+     "answer": "I covered that in the migration answer - the key-by-key reconciliation between the batch and streaming paths, the idempotent offsets, and keeping the old path running until the diff was clean for a week. There's nothing I'd add beyond what I already described."
+    }
+   ]
+  },
+  {
+   "name": "dodge-false-callback-scored-low-senior-session",
+   "target_level": "senior",
+   "note": "Pins task 0036: turn 2 asks a fair, applicable question about rollout de-risking, which the turn-1 answer never touched (it was about a latency optimization). The candidate evades it with a false 'I already covered that' the transcript does not support, so it is a dodge, not a legitimate decline: the grader scores it low (a 1), with a gap that plainly describes what was left unanswered. dodge_turns lists the turn that must be scored low. Turn indices are 1-based.",
+   "senior_floor_turns": [
+    1
+   ],
+   "dodge_turns": [
+    2
+   ],
+   "turns": [
+    {
+     "question": "Tell me about a performance problem you owned end to end.",
+     "answer": "Our checkout API at Brightline was spending most of its time in a hot serialization path. I profiled it under production load, found we were re-encoding the same catalog payloads on every request, and added a versioned in-process cache keyed on the catalog revision. Median checkout latency dropped from about 240ms to 90ms and CPU on the fleet fell by a third."
+    },
+    {
+     "question": "What did you do to de-risk the rollout of that cache?",
+     "answer": "I already went through that in my last answer."
+    }
+   ]
+  },
+  {
+   "name": "premise-correction-then-answer-scored-senior-session",
+   "target_level": "senior",
+   "note": "Pins task 0036's carve-out: when a candidate corrects a small false premise and then answers the question substantively in the same turn, the turn is scored on the answer they gave, not skipped. The interviewer mislabels the system; the candidate fixes the label and still tells the full story. senior_floor_turns expects the single turn to score at least 4. Turn indices are 1-based.",
+   "senior_floor_turns": [
+    1
+   ],
+   "turns": [
+    {
+     "question": "Tell me about scaling the GraphQL gateway you built at Northwind.",
+     "answer": "Quick correction - it was a gRPC gateway, not GraphQL, and it was at Helioscope, not Northwind. On scaling it though: it fronted forty backend services and was buckling at about 12k requests a second because every request opened a fresh upstream connection. I added per-target connection pooling with health-aware load shedding and moved deadline propagation into the interceptor chain, then load-tested to three times that before rollout. We took it to 40k requests a second with p99 holding under 50ms, and upstream connection churn dropped by an order of magnitude."
+    }
+   ]
   }
  ]
 }

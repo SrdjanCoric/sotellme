@@ -107,6 +107,22 @@ def test_grader_prompt_still_scores_a_substantive_question_ducked_with_a_bare_ye
     assert "is still scored" in system_text
 
 
+def test_grader_prompt_skips_a_legitimate_decline_on_the_answer_side() -> None:
+    system_text = dict(grader_messages("mid", "transcript")).get("system", "").lower()
+
+    assert "the same skip reaches the answer side" in system_text
+    assert "correcting a false premise" in system_text
+    assert "already answered in an earlier turn" in system_text
+
+
+def test_grader_prompt_never_re_scores_an_earlier_turn_and_scores_a_real_dodge() -> None:
+    system_text = dict(grader_messages("mid", "transcript")).get("system", "").lower()
+
+    assert "keeps whatever score it earned" in system_text
+    assert "answers substantively in the same turn" in system_text
+    assert "plainly describes what was left unanswered" in system_text
+
+
 def test_grader_prompt_defines_action_by_the_active_verb_rule() -> None:
     system_text = dict(grader_messages("senior", "transcript")).get("system", "").lower()
 
