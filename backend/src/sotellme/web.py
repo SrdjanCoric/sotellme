@@ -13,6 +13,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from sotellme.assessor import AssessorError
 from sotellme.catalog import Catalog, CatalogError, load_catalog
 from sotellme.cli import (
+    ENDED_EARLY_EMPTY_MESSAGE,
+    ENDED_EARLY_PARTIAL_MESSAGE,
     NO_COACHING_MESSAGE,
     TARGET_LEVELS,
     _data_dir,
@@ -84,6 +86,7 @@ class WebState:
     level: TargetLevel | None = None
     answered: list[Turn] = field(default_factory=list)
     finished: bool = False
+    ended_early: bool = False
     closing: str | None = None
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
@@ -100,6 +103,7 @@ def state_from_snapshot(snapshot: SessionSnapshot) -> WebState:
         level=snapshot.level,
         answered=list(snapshot.transcript),
         finished=snapshot.finished,
+        ended_early=snapshot.ended_early,
         closing=snapshot.closing,
         grade=snapshot.grade,
         coach=snapshot.coach,
@@ -118,6 +122,7 @@ def state_after_answer(state: WebState, answer: str, result: TurnResult) -> WebS
         answered=answered,
         question=result.next_question,
         finished=result.finished,
+        ended_early=result.ended_early,
         closing=result.closing,
         grade=result.grade,
         coach=result.coach,
@@ -674,6 +679,12 @@ def _render_report(state: WebState) -> None:
         st.chat_message(role).write(content)
     grade = state.grade
     coach = state.coach
+    has_scores = grade is not None and bool(grade.scores)
+    if state.ended_early and not has_scores:
+        st.info(ENDED_EARLY_EMPTY_MESSAGE)
+        return
+    if state.ended_early:
+        st.warning(ENDED_EARLY_PARTIAL_MESSAGE)
     if coach is not None and grade is not None and grade.scores:
         st.subheader("Scorecard")
         st.text(format_score_summary(grade))

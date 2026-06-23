@@ -487,7 +487,8 @@ def simulate_session(
 
     Returns:
         The simulated session; finished_reason is "completed" when the engine ran out of
-        questions, or "max_turns" when the turn limit was reached first.
+        questions, "max_turns" when the turn limit was reached first, or "terminated" when
+        the guardrail ended the interview early.
     """
     snapshot = engine.start(cv_path, persona.posting)
     if snapshot.needs_level:
@@ -505,7 +506,10 @@ def simulate_session(
         transcript = list(result.transcript)
         question = result.next_question
 
-    finished_reason = "completed" if question is None else "max_turns"
+    if result is not None and result.ended_early:
+        finished_reason = "terminated"
+    else:
+        finished_reason = "completed" if question is None else "max_turns"
     return SimulatedSession(
         persona=persona.name,
         target_level=persona.target_level,

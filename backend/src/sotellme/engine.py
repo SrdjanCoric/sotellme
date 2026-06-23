@@ -143,6 +143,7 @@ class InterviewState(TypedDict, total=False):
     current_topic: str
     decision: DirectorDecision
     closing: str
+    ended_early: bool
     grade: SessionGrade
     coach: CoachReport
 
@@ -157,6 +158,7 @@ class SessionSnapshot(BaseModel):
     question: str | None = None
     transcript: list[Turn] = []
     finished: bool = False
+    ended_early: bool = False
     closing: str | None = None
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
@@ -178,6 +180,7 @@ class TurnResult(BaseModel):
 
     next_question: str | None = None
     closing: str | None = None
+    ended_early: bool = False
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
     transcript: list[Turn] = []
@@ -338,7 +341,12 @@ class InterviewEngine:
                     "guardrail_redirects": envelope.consecutive_redirects,
                     "screened": "redirect",
                 }
-            return {"pending_answer": "", "redirect": "", "screened": "terminate"}
+            return {
+                "pending_answer": "",
+                "redirect": "",
+                "screened": "terminate",
+                "ended_early": True,
+            }
 
         def assess(state: InterviewState) -> InterviewState:
             topic = state.get("current_topic", "")
@@ -357,8 +365,11 @@ class InterviewEngine:
             return {"grade": grader(transcript, level)}
 
         def coach(state: InterviewState) -> InterviewState:
+            grade = state["grade"]
+            if not grade.scores:
+                return {}
             level = state["role_context"].target_level or "mid"
-            return {"coach": coacher(state.get("transcript", []), state["grade"], level)}
+            return {"coach": coacher(state.get("transcript", []), grade, level)}
 
         def route_after_direct(state: InterviewState) -> str:
             if state["decision"].action in ("wrap_up", "terminate"):
@@ -550,6 +561,7 @@ class InterviewEngine:
         return TurnResult(
             next_question=None,
             closing=state.values.get("closing"),
+            ended_early=state.values.get("ended_early", False),
             grade=state.values.get("grade"),
             coach=state.values.get("coach"),
             transcript=state.values.get("transcript", []),
@@ -591,6 +603,7 @@ class InterviewEngine:
         return TurnResult(
             next_question=None,
             closing=state.values.get("closing"),
+            ended_early=state.values.get("ended_early", False),
             grade=state.values.get("grade"),
             coach=state.values.get("coach"),
             transcript=state.values.get("transcript", []),
@@ -658,6 +671,7 @@ class InterviewEngine:
             ),
             transcript=list(values.get("transcript", [])),
             finished=finished,
+            ended_early=values.get("ended_early", False),
             closing=values.get("closing"),
             grade=values.get("grade"),
             coach=values.get("coach"),

@@ -499,6 +499,82 @@ def test_a_terminate_decision_also_ends_with_the_closing_turn(tmp_path: Path) ->
     assert result.closing == CLOSING_TURN
 
 
+def test_a_guardrail_terminate_on_the_first_answer_skips_coaching(tmp_path: Path) -> None:
+    guardrail = ScriptedGuardrail(["terminate"])
+    coacher = RecordingCoacher()
+    with build_engine(tmp_path / "data", guardrail=guardrail, coacher=coacher) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+
+    assert result.finished
+    assert result.ended_early
+    assert result.transcript == []
+    assert result.grade is not None and result.grade.scores == []
+    assert result.coach is None
+    assert coacher.seen == []
+
+
+def test_a_guardrail_terminate_mid_session_still_coaches_the_collected_turns(
+    tmp_path: Path,
+) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    guardrail = ScriptedGuardrail(["allow", "terminate"])
+    grader = RecordingGrader()
+    coacher = RecordingCoacher()
+    with build_engine(
+        tmp_path / "data",
+        director=director,
+        guardrail=guardrail,
+        grader=grader,
+        coacher=coacher,
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "We migrated the billing pipeline.")
+        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+
+    assert result.finished
+    assert result.ended_early
+    assert [turn.answer for turn in result.transcript] == ["We migrated the billing pipeline."]
+    assert result.grade == GRADE
+    assert result.coach == COACH_REPORT
+    assert len(coacher.seen) == 1
+
+
+def test_a_terminate_with_only_unscored_turns_keeps_the_transcript_and_skips_coaching(
+    tmp_path: Path,
+) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    guardrail = ScriptedGuardrail(["allow", "terminate"])
+    grader = RecordingGrader(SessionGrade(scores=[]))
+    coacher = RecordingCoacher()
+    with build_engine(
+        tmp_path / "data",
+        director=director,
+        guardrail=guardrail,
+        grader=grader,
+        coacher=coacher,
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "A clarifying question, not a story.")
+        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+
+    assert result.finished
+    assert result.ended_early
+    assert [turn.answer for turn in result.transcript] == ["A clarifying question, not a story."]
+    assert coacher.seen == []
+    assert result.coach is None
+
+
+def test_a_normal_completion_is_not_flagged_as_ended_early(tmp_path: Path) -> None:
+    with build_engine(tmp_path / "data") as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+
+    assert result.finished
+    assert not result.ended_early
+    assert result.coach == COACH_REPORT
+
+
 def test_a_follow_up_decision_poses_the_next_question(tmp_path: Path) -> None:
     director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
     interviewer = StubInterviewer()
