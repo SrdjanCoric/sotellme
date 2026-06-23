@@ -1,4 +1,5 @@
 import logging
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from sotellme.guardrail import GuardrailVerdict
 from sotellme.interviewer import Turn
 from sotellme.profile import CandidateProfile, Role
 from sotellme.role import CompetencyWeight, RoleContext, TargetLevel
+from sotellme.simulation import persona_checkpoint_dir
 
 STUB_PROFILE = CandidateProfile(
     roles=[Role(title="Engineer", organization="Acme")],
@@ -338,6 +340,40 @@ def test_a_wrap_up_decision_ends_the_session_with_the_closing_turn(tmp_path: Pat
 
     assert result.finished
     assert result.closing == CLOSING_TURN
+
+
+def test_concurrent_sessions_in_isolated_checkpoint_dirs_do_not_lock(tmp_path: Path) -> None:
+    # An eval run drives every persona's interview concurrently (the async experiment offloads
+    # each blocking interview to its own thread via asyncio.to_thread). Sharing one checkpoint
+    # DB intermittently raises "database is locked", so each persona gets its own checkpoint
+    # directory; engines on separate SQLite files must each complete a full session cleanly.
+    base = tmp_path / "data"
+    cv = write_cv(tmp_path)
+    failures: list[BaseException] = []
+    closings: list[str | None] = []
+    lock = threading.Lock()
+
+    def run_one(name: str) -> None:
+        try:
+            director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+            with build_engine(persona_checkpoint_dir(base, name), director=director) as engine:
+                session = start_past_setup(engine, cv)
+                result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+            with lock:
+                closings.append(result.closing)
+        except BaseException as exc:  # surface any thread failure to the assertion
+            with lock:
+                failures.append(exc)
+
+    names = [f"persona-{i}" for i in range(8)]
+    threads = [threading.Thread(target=run_one, args=(name,)) for name in names]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
+    assert closings == [CLOSING_TURN] * 8
 
 
 def test_replay_from_grade_reruns_grade_and_coach_without_re_running_upstream(

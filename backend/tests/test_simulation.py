@@ -1,5 +1,5 @@
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
@@ -22,6 +22,7 @@ from sotellme.profile import CandidateProfile, Role
 from sotellme.role import CompetencyWeight, RoleContext, TargetLevel
 from sotellme.simulation import (
     DEFAULT_COST_GATE_THRESHOLD,
+    EVAL_TYPICAL_TURNS,
     QuestionRecord,
     RecordingDirector,
     RecordingInterviewer,
@@ -29,8 +30,10 @@ from sotellme.simulation import (
     TurnRecorder,
     confirm_run,
     estimate_run_cost,
+    format_run_cost,
     judge_session,
     no_web_research,
+    persona_checkpoint_dir,
     replay_sessions,
     simulate_session,
     write_persona_cv,
@@ -287,6 +290,51 @@ def test_estimate_run_cost_is_none_when_a_model_has_no_price() -> None:
     assert estimate_run_cost(3, 10, "fast", "missing", _PRICES).usd is None
 
 
+# Catalog-priced (sonnet-fast / opus-smart) — the slots the reference run used. The 8-persona
+# reference run averaged ~6 turns and cost ~$6.11; the old all-at-cap (20-turn) figure was $22.09.
+def test_estimate_run_cost_at_typical_turns_lands_near_the_observed_run() -> None:
+    estimate = estimate_run_cost(8, EVAL_TYPICAL_TURNS, "claude-sonnet-4-6", "claude-opus-4-8")
+
+    assert estimate.usd is not None
+    # A believable median in the single-digit dollars, near the ~$6 observed run and far under
+    # the old ~$22 max-turns figure.
+    assert 3.0 < estimate.usd < 9.0
+
+
+def test_estimate_run_cost_at_typical_turns_prices_below_the_hard_cap() -> None:
+    typical = estimate_run_cost(8, EVAL_TYPICAL_TURNS, "claude-sonnet-4-6", "claude-opus-4-8")
+    at_cap = estimate_run_cost(8, 20, "claude-sonnet-4-6", "claude-opus-4-8")
+
+    assert typical.usd is not None and at_cap.usd is not None
+    assert EVAL_TYPICAL_TURNS < 20
+    assert typical.usd < at_cap.usd
+
+
+def test_estimate_run_cost_credits_prompt_caching() -> None:
+    cached = {
+        "fast": ModelPrice(input=3.0, output=15.0, cached_input=0.3),
+        "smart": ModelPrice(input=5.0, output=25.0, cached_input=0.5),
+    }
+    uncached = {
+        "fast": ModelPrice(input=3.0, output=15.0),
+        "smart": ModelPrice(input=5.0, output=25.0),
+    }
+    with_cache = estimate_run_cost(4, EVAL_TYPICAL_TURNS, "fast", "smart", cached)
+    without_cache = estimate_run_cost(4, EVAL_TYPICAL_TURNS, "fast", "smart", uncached)
+
+    assert with_cache.usd is not None and without_cache.usd is not None
+    assert with_cache.usd < without_cache.usd
+
+
+def test_format_run_cost_reads_as_a_median_not_an_upper_bound() -> None:
+    estimate = estimate_run_cost(8, EVAL_TYPICAL_TURNS, "fast", "smart", _PRICES)
+
+    text = format_run_cost(estimate)
+
+    assert "upper bound" not in text
+    assert "typical" in text.lower()
+
+
 def test_confirm_run_proceeds_without_asking_under_the_threshold() -> None:
     estimate = estimate_run_cost(1, 1, "fast", "smart", _PRICES)
     asked: list[str] = []
@@ -494,6 +542,7 @@ class FakeReplayEngine:
     def __init__(self, grade: SessionGrade) -> None:
         self._grade = grade
         self.replayed: list[tuple[str, str]] = []
+        self.closed = False
 
     def replay_from(self, thread_id: str, node: str) -> TurnResult:
         self.replayed.append((thread_id, node))
@@ -501,6 +550,22 @@ class FakeReplayEngine:
 
     def session_usage(self) -> dict[str, ModelUsage]:
         return {}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _replay_factory(
+    engine: FakeReplayEngine,
+) -> tuple[Callable[[Path], FakeReplayEngine], list[Path]]:
+    """A make_engine that hands back one engine and records the dir it was built for."""
+    dirs: list[Path] = []
+
+    def make(data_dir: Path) -> FakeReplayEngine:
+        dirs.append(data_dir)
+        return engine
+
+    return make, dirs
 
 
 def test_replay_sessions_regrades_stored_sessions_and_skips_the_ungradable(tmp_path: Path) -> None:
@@ -532,10 +597,15 @@ def test_replay_sessions_regrades_stored_sessions_and_skips_the_ungradable(tmp_p
         _persona(name="staff-missing", target_level="staff"),
     ]
     engine = FakeReplayEngine(_grade(4))
+    make, dirs = _replay_factory(engine)
+    checkpoints = tmp_path / "checkpoints"
 
-    report = replay_sessions(engine, personas, artifacts, _PRICES)
+    report = replay_sessions(make, personas, checkpoints, artifacts, _PRICES)
 
     assert engine.replayed == [("t1", "grade")]
+    assert engine.closed
+    # Only the one replayable persona is forked, on its own isolated checkpoint directory.
+    assert dirs == [persona_checkpoint_dir(checkpoints, "senior-strong")]
     reloaded = SimulatedSession.model_validate_json((artifacts / "senior-strong.json").read_text())
     assert reloaded.grade is not None
     assert [s.score for s in reloaded.grade.scores] == [4]
@@ -559,8 +629,11 @@ def test_replay_tolerates_a_stored_grade_the_current_invariant_rejects(tmp_path:
     raw["grade"]["scores"][0]["gap"] = ""
     path.write_text(json.dumps(raw))
     engine = FakeReplayEngine(_grade(5))
+    make, _ = _replay_factory(engine)
 
-    report = replay_sessions(engine, [_persona(name="senior-strong")], artifacts, _PRICES)
+    report = replay_sessions(
+        make, [_persona(name="senior-strong")], tmp_path / "checkpoints", artifacts, _PRICES
+    )
 
     assert engine.replayed == [("t1", "grade")]
     reloaded = SimulatedSession.model_validate_json(path.read_text())
@@ -578,9 +651,15 @@ def test_replay_sessions_passes_the_stage_through_to_the_engine(tmp_path: Path) 
         artifacts,
     )
     engine = FakeReplayEngine(_grade(3))
+    make, _ = _replay_factory(engine)
 
     report = replay_sessions(
-        engine, [_persona(name="senior-strong")], artifacts, _PRICES, stage="coach"
+        make,
+        [_persona(name="senior-strong")],
+        tmp_path / "checkpoints",
+        artifacts,
+        _PRICES,
+        stage="coach",
     )
 
     assert engine.replayed == [("t1", "coach")]

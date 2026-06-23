@@ -22,7 +22,13 @@ from sotellme.grader import SessionGrade
 from sotellme.interviewer import Turn
 from sotellme.judge import CoverageVerdict, QuestionContext, QuestionVerdict
 from sotellme.personas import Persona
-from sotellme.pricing import ModelUsage, cost_usd, format_cost_summary, summarize_actual_cost
+from sotellme.pricing import (
+    ModelUsage,
+    cost_usd,
+    format_cost_summary,
+    merge_usage,
+    summarize_actual_cost,
+)
 from sotellme.profile import CandidateProfile
 from sotellme.role import RoleContext, TargetLevel
 
@@ -32,8 +38,7 @@ from sotellme.role import RoleContext, TargetLevel
 # and the candidate-simulator answering. Smart slot: per turn the director and the per-question
 # judge, and once at the end the grader, coach, and coverage judge. Calibrated against a real
 # ~5-turn senior run (2026-06-16: 144k tokens, ~$0.68 on sonnet-fast / opus-smart); the figures
-# scale with the turn count and stay a mild upper bound (they assume you hit the turn cap and
-# credit no prompt caching).
+# scale with the turn count.
 EVAL_SETUP_FAST_INPUT = 18_000
 EVAL_SETUP_FAST_OUTPUT = 2_500
 EVAL_PER_TURN_FAST_INPUT = 14_000
@@ -42,6 +47,17 @@ EVAL_PER_TURN_SMART_INPUT = 8_000
 EVAL_PER_TURN_SMART_OUTPUT = 1_200
 EVAL_FEEDBACK_SMART_INPUT = 12_000
 EVAL_FEEDBACK_SMART_OUTPUT = 4_000
+
+# The turn count the estimate prices for: the typical session, not the hard cap. Sessions wrap
+# well before `--max-turns`; an 8-persona reference run (2026-06-23) averaged ~6 turns and cost
+# $6.11, against a $22.09 estimate that had priced every persona at the 20-turn cap. The estimate
+# follows the typical run; the cap only bounds the worst case.
+EVAL_TYPICAL_TURNS = 6
+
+# Fraction of each session's input tokens served from the prompt cache. The large agent system
+# prompts repeat every turn and are cached after the first, so most input is billed at the cached
+# rate; crediting that keeps the estimate honest instead of charging full input on every turn.
+EVAL_CACHED_INPUT_FRACTION = 0.5
 
 # A simulated eval run with this estimated price or higher asks for explicit confirmation.
 DEFAULT_COST_GATE_THRESHOLD = 3.50
@@ -96,8 +112,10 @@ def estimate_run_cost(
     if fast_price is None or smart_price is None:
         return none
     fast_in, fast_out, smart_in, smart_out = eval_session_tokens(expected_turns)
-    fast_usd = cost_usd(fast_price, fast_in, fast_out) * persona_count
-    smart_usd = cost_usd(smart_price, smart_in, smart_out) * persona_count
+    fast_cached = int(fast_in * EVAL_CACHED_INPUT_FRACTION)
+    smart_cached = int(smart_in * EVAL_CACHED_INPUT_FRACTION)
+    fast_usd = cost_usd(fast_price, fast_in, fast_out, fast_cached) * persona_count
+    smart_usd = cost_usd(smart_price, smart_in, smart_out, smart_cached) * persona_count
     return RunCostEstimate(
         persona_count=persona_count,
         expected_turns=expected_turns,
@@ -118,10 +136,10 @@ def format_run_cost(estimate: RunCostEstimate) -> str:
         )
     return (
         f"Estimated eval-run cost: about ${estimate.usd:.2f} for {estimate.persona_count} "
-        f"persona(s) at up to ~{estimate.expected_turns} questions each: "
+        f"persona(s) at a typical ~{estimate.expected_turns} questions each: "
         f"${estimate.fast_usd:.2f} on {estimate.fast_model} + "
         f"${estimate.smart_usd:.2f} on {estimate.smart_model} "
-        f"(rough upper bound; real runs wrap earlier and hit the prompt cache)."
+        f"(median estimate, prompt caching credited; a run that hits the cap can cost more)."
     )
 
 
@@ -176,6 +194,10 @@ class ReplayEngine(Protocol):
 
     def session_usage(self) -> dict[str, ModelUsage]:
         """Return the model usage accumulated during the replay."""
+        ...
+
+    def close(self) -> None:
+        """Release the engine's checkpoint connection."""
         ...
 
 
@@ -439,6 +461,16 @@ def write_session_artifact(session: SimulatedSession, out_dir: Path) -> Path:
     return path
 
 
+def persona_checkpoint_dir(data_dir: Path, persona_name: str) -> Path:
+    """Return the isolated checkpoint directory for one persona's simulated session.
+
+    Eval-run personas run concurrently, so each gets its own checkpoint DB rather than sharing
+    one SQLite file — concurrent writers to a shared file intermittently raise "database is
+    locked". Replay forks the same per-persona DB, keyed by the persona name it stored under.
+    """
+    return data_dir / persona_name
+
+
 class _Director(Protocol):
     def decide(self, situation: DirectorSituation) -> DirectorDecision: ...
 
@@ -617,8 +649,9 @@ def format_replay_delta(
 
 
 def replay_sessions(
-    engine: ReplayEngine,
+    make_engine: Callable[[Path], ReplayEngine],
     personas: Sequence[Persona],
+    data_dir: Path,
     artifacts_dir: Path,
     prices: Mapping[str, ModelPrice],
     stage: str = "grade",
@@ -627,11 +660,13 @@ def replay_sessions(
 
     Skips personas with no stored session or one that cannot be replayed, replays the
     rest from the given stage, updates grade, coach, and closing on the artifact, and
-    appends a cost summary.
+    appends a cost summary. The run isolates each persona's checkpoint DB under its own
+    directory, so a fresh engine is built on that directory per persona to fork it.
 
     Args:
-        engine: The replay engine used to fork and re-run sessions.
+        make_engine: Builds a replay engine bound to a persona's checkpoint directory.
         personas: The personas whose stored sessions are replayed.
+        data_dir: Base directory holding the per-persona checkpoint directories.
         artifacts_dir: Directory holding and receiving the session artifacts.
         prices: Model price lookup used to summarize replay cost.
         stage: The stage to replay from.
@@ -640,6 +675,7 @@ def replay_sessions(
         A multi-line report of per-persona outcomes followed by a cost summary.
     """
     lines: list[str] = []
+    usages: list[Mapping[str, ModelUsage]] = []
     for persona in personas:
         path = artifacts_dir / f"{persona.name}.json"
         if not path.exists():
@@ -651,13 +687,18 @@ def replay_sessions(
             lines.append(f"skip {persona.name}: {reason}")
             continue
         assert session.thread_id is not None
-        result = engine.replay_from(session.thread_id, stage)
+        engine = make_engine(persona_checkpoint_dir(data_dir, persona.name))
+        try:
+            result = engine.replay_from(session.thread_id, stage)
+            usages.append(engine.session_usage())
+        finally:
+            engine.close()
         session.grade = result.grade
         session.coach = result.coach
         if result.closing:
             session.closing = result.closing
         write_session_artifact(session, artifacts_dir)
         lines.append(format_replay_delta(persona.name, stage, before, result.grade))
-    cost = format_cost_summary(summarize_actual_cost(engine.session_usage(), prices))
+    cost = format_cost_summary(summarize_actual_cost(merge_usage(usages), prices))
     body = "\n".join(lines) if lines else "No sessions to replay."
     return f"{body}\n\n{cost}"
