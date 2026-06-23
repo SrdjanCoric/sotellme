@@ -259,3 +259,37 @@ def test_grade_session_raises_grading_error_when_the_output_does_not_validate() 
 
     with pytest.raises(GradingError):
         grade_session(transcript, "senior", model)
+
+
+def test_grade_session_error_does_not_blame_a_short_transcript_for_a_coverage_failure() -> None:
+    transcript = [
+        Turn(question=f"Question {i}", answer="A complete, quantified STAR story.")
+        for i in range(1, 8)
+    ]
+    grade = SessionGrade(scores=[complete_score(transcript[0].question, turn_index=1)])
+    model = StubChatModel(structured_response=grade)
+
+    with pytest.raises(GradingError) as exc_info:
+        grade_session(transcript, "senior", model)
+
+    assert "too short" not in str(exc_info.value).lower()
+    detail = exc_info.value.diagnostic()
+    assert "cover turns 1..7" in detail
+    assert "OutputParserException" in detail
+
+
+def test_a_grading_error_diagnostic_surfaces_the_underlying_cause() -> None:
+    try:
+        SessionGrade.model_validate({"scores": "not a list"})
+    except ValidationError as cause:
+        exc = GradingError("Could not grade the session.")
+        exc.__cause__ = cause
+
+    detail = exc.diagnostic()
+
+    assert "Could not grade the session." in detail
+    assert "ValidationError" in detail
+
+
+def test_a_grading_error_diagnostic_without_a_cause_returns_the_message() -> None:
+    assert GradingError("boom").diagnostic() == "boom"
