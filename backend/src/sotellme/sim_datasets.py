@@ -18,6 +18,7 @@ from sotellme.budget import BudgetCallback
 from sotellme.catalog import ModelPrice
 from sotellme.config import ModelConfig, build_chat_model
 from sotellme.eval_datasets import apply_limit, langfuse_client
+from sotellme.grader import GradingError
 from sotellme.judge import JudgeError, QuestionJudge
 from sotellme.personas import AnswerBehavior, Persona
 from sotellme.pricing import format_cost_summary, summarize_actual_cost
@@ -160,9 +161,12 @@ def run_simulation_experiment(
 
     def task(*, item: Any, **_: Any) -> dict[str, Any]:
         persona = Persona.model_validate(item.input)
-        session = run_persona_simulation(
-            persona, simulator, config, callbacks, data_dir, cv_dir, max_turns
-        )
+        try:
+            session = run_persona_simulation(
+                persona, simulator, config, callbacks, data_dir, cv_dir, max_turns
+            )
+        except GradingError as exc:
+            raise GradingError(exc.diagnostic()) from exc
         write_session_artifact(session, artifacts_dir)
         try:
             judgement = judge_session(judge, session)

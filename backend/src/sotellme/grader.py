@@ -120,10 +120,21 @@ class SessionGrade(BaseModel):
 class GradingError(Exception):
     """Raised when the session cannot be graded into a valid SessionGrade."""
 
-    pass
+    def diagnostic(self) -> str:
+        """Describe this failure with its chained cause so a run is diagnosable.
+
+        The bare message is generic, and a wrapper that reduces a raised exception to its
+        message (e.g. Langfuse's ``run_experiment``) hides the real
+        ``ValidationError``/``OutputParserException``. Folding the chained ``__cause__``
+        into the message keeps the failure diagnosable from the run output alone.
+        """
+        cause = self.__cause__
+        if cause is None:
+            return str(self)
+        return f"{self} (caused by {type(cause).__name__}: {cause})"
 
 
-_GRADE_FAILURE_MESSAGE = "Could not grade the session. The interview may be too short to score."
+_GRADE_FAILURE_MESSAGE = "Could not grade the session."
 
 
 _GRADE_RETRY_ATTEMPTS = 3

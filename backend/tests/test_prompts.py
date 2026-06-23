@@ -269,6 +269,13 @@ def test_research_prompt_frames_fetched_pages_as_data_not_instructions() -> None
     assert "not instructions" in system_text
 
 
+def test_research_prompt_forbids_inventing_specifics_when_fetches_are_empty() -> None:
+    system_text = dict(research_messages("Company: Acme", "posting", 6))["system"].lower()
+
+    assert "never invent" in system_text
+    assert "posting's own topics" in system_text
+
+
 def director_test_messages(
     transcript_text: str = "",
     brief: str = "Acme builds billing software.",
@@ -481,6 +488,14 @@ def test_interviewer_prompt_never_presumes_an_outcome() -> None:
     assert "as if they had already said it" in lowered
 
 
+def test_interviewer_prompt_separates_company_knowledge_from_candidate_experience() -> None:
+    system_text = dict(opening_question_messages("Engineer at Acme"))["system"].lower()
+
+    assert "what the company makes and what this candidate has done" in system_text
+    assert "must trace to their profile or the transcript" in system_text
+    assert "named only in the brief" in system_text
+
+
 def test_interviewer_prompt_grounds_company_questions_in_the_brief() -> None:
     system_text = dict(opening_question_messages("Engineer at Acme"))["system"]
     lowered = system_text.lower()
@@ -488,6 +503,13 @@ def test_interviewer_prompt_grounds_company_questions_in_the_brief() -> None:
     assert "ground the question in what the company actually makes" in lowered
     assert "name the product or the domain itself" in lowered
     assert "the company's name alone is not grounding" in lowered
+
+
+def test_interviewer_prompt_grounds_why_us_in_overlap_not_disconnected_brief_specifics() -> None:
+    system_text = dict(opening_question_messages("Engineer at Acme"))["system"].lower()
+
+    assert "overlaps what this candidate has actually done" in system_text
+    assert "merely shares the name" in system_text
 
 
 def test_interviewer_prompt_opens_topics_plainly_without_reading_the_cv_back() -> None:

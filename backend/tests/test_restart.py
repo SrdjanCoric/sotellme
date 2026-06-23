@@ -109,7 +109,7 @@ cli._build_director = lambda config: StubDirector()
 cli._build_interviewer = lambda config: StubInterviewer()
 cli._build_guardrail = lambda config: AllowGuardrail()
 cli._build_role_builder = lambda config: (lambda posting_text: default_role_context())
-cli._build_researcher = lambda config: (lambda posting_text, context: "")
+cli._build_researcher = lambda config, fetcher=None: (lambda posting_text, context: "")
 cli._build_grader = lambda config: stub_grader
 cli._build_coacher = lambda config: stub_coacher
 sys.exit(cli.main(sys.argv[1:]))

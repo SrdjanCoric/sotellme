@@ -327,6 +327,18 @@ def write_persona_cv(persona: Persona, out_dir: Path) -> Path:
     return path
 
 
+def no_web_research(url: str) -> str:
+    """Refuse every research fetch so simulations never hit the live web.
+
+    Synthetic personas invent company names that can collide with real domains; a live
+    fetch would ground the brief in the wrong same-named company. Refusing keeps the brief
+    on the posting's own topics, which is the grounding the simulation is meant to test.
+    """
+    from sotellme.fetch import ResearchFetchError
+
+    raise ResearchFetchError("Web research is disabled in simulations; use the posting alone.")
+
+
 def build_recording_engine(
     config: "ModelConfig",
     callbacks: list["BaseCallbackHandler"],
@@ -352,7 +364,12 @@ def build_recording_engine(
         recorder,
     )
     return build_engine(
-        config, callbacks, data_dir=data_dir, director=director, interviewer=interviewer
+        config,
+        callbacks,
+        data_dir=data_dir,
+        director=director,
+        interviewer=interviewer,
+        fetcher=no_web_research,
     )
 
 
