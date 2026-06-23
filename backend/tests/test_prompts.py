@@ -274,6 +274,7 @@ def director_test_messages(
     brief: str = "Acme builds billing software.",
     consecutive_follow_ups: int = 0,
     follow_ups_exhausted: bool = False,
+    reprompts_exhausted: bool = False,
 ) -> dict[str, str]:
     return dict(
         director_messages(
@@ -288,6 +289,7 @@ def director_test_messages(
             consecutive_follow_ups=consecutive_follow_ups,
             follow_up_cap=6,
             follow_ups_exhausted=follow_ups_exhausted,
+            reprompts_exhausted=reprompts_exhausted,
         )
     )
 
@@ -386,6 +388,32 @@ def test_director_prompt_calls_the_follow_up_cap_a_guardrail_too() -> None:
     system_text = director_test_messages()["system"].lower()
 
     assert "consecutive follow-ups" in system_text
+
+
+def test_director_prompt_presses_a_deflection_once_then_moves_on() -> None:
+    system_text = director_test_messages()["system"].lower()
+
+    assert "reprompt" in system_text
+    assert "did not actually answer" in system_text
+    assert "only once" in system_text
+    # a genuine decline is not a deflection and is never re-prompted (the new block's own wording)
+    assert "genuine decline is not a deflection" in system_text
+    assert "never reprompt" in system_text
+
+
+def test_director_messages_demand_advance_when_the_reprompt_is_used_up() -> None:
+    human_text = director_test_messages(reprompts_exhausted=True)["human"]
+
+    assert (
+        "You have already re-prompted this question once: open a new topic or wrap up."
+        in human_text
+    )
+
+
+def test_director_messages_omit_the_reprompt_exhausted_line_by_default() -> None:
+    human_text = director_test_messages()["human"]
+
+    assert "already re-prompted this question once" not in human_text
 
 
 def test_director_messages_handle_a_missing_brief_and_empty_transcript() -> None:

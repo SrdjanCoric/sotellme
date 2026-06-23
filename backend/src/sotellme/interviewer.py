@@ -11,6 +11,7 @@ from sotellme.profile import CandidateProfile
 from sotellme.prompts import (
     FOLLOW_UP_DIRECTIVE_TEMPLATE,
     NEW_TOPIC_DIRECTIVE_TEMPLATE,
+    REPROMPT_DIRECTIVE_TEMPLATE,
     closing_messages,
     question_messages,
     redirect_messages,
@@ -79,6 +80,8 @@ def render_directive(decision: "DirectorDecision") -> str:
     """Render a director decision into a directive line for the question prompt."""
     if decision.action == "follow_up":
         return FOLLOW_UP_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
+    if decision.action == "reprompt":
+        return REPROMPT_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
     if decision.action == "new_topic":
         return NEW_TOPIC_DIRECTIVE_TEMPLATE.format(subject=decision.subject, reason=decision.reason)
     raise ValueError(

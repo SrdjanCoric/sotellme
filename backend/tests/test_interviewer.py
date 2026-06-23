@@ -94,6 +94,24 @@ def test_a_new_topic_directive_names_the_topic() -> None:
     assert "the deep dive" in directive
 
 
+def test_a_reprompt_directive_warmly_re_asks_the_unanswered_subject() -> None:
+    decision = DirectorDecision(
+        action="reprompt",
+        subject="the migration they led",
+        reason="a fair question went unanswered",
+    )
+
+    directive = render_directive(decision)
+
+    assert "the migration they led" in directive
+    assert "a fair question went unanswered" in directive
+    lowered = directive.lower()
+    assert "warmly" in lowered or "warm" in lowered
+    # the press stays non-accusatory: it never tells the interviewer to call out the dodge
+    assert "dodge" not in lowered
+    assert "accus" not in lowered
+
+
 def test_render_directive_refuses_a_closing_action() -> None:
     for action in ("wrap_up", "terminate"):
         decision = DirectorDecision(action=action, reason="the session is over")

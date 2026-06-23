@@ -21,7 +21,11 @@ from sotellme.assessor import AssessorError, assess_answer
 from sotellme.catalog import CatalogError, ModelPrice, load_catalog
 from sotellme.coach import CoachingError, CoachReport, coach_session
 from sotellme.config import ModelConfig, ModelConfigError, build_chat_model, resolve_model_config
-from sotellme.coverage import DEFAULT_FOLLOW_UP_CAP, DEFAULT_QUESTION_CAP
+from sotellme.coverage import (
+    DEFAULT_FOLLOW_UP_CAP,
+    DEFAULT_QUESTION_CAP,
+    DEFAULT_REPROMPT_CAP,
+)
 from sotellme.director import DirectorError, LLMDirector
 from sotellme.engine import (
     Assessor,
@@ -408,6 +412,7 @@ def build_engine(
         guardrail=_build_guardrail(config),
         question_cap=_env_cap("SOTELLME_QUESTION_CAP", DEFAULT_QUESTION_CAP),
         follow_up_cap=_env_cap("SOTELLME_FOLLOW_UP_CAP", DEFAULT_FOLLOW_UP_CAP),
+        reprompt_cap=_env_cap("SOTELLME_REPROMPT_CAP", DEFAULT_REPROMPT_CAP),
         callbacks=callbacks,
     )
 
