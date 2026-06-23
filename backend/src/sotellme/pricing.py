@@ -1,6 +1,6 @@
 """Token-usage cost estimation and reporting for interview sessions."""
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from sotellme.catalog import ModelPrice, default_catalog
@@ -117,6 +117,24 @@ def estimate_session_cost(
         output_tokens=output_tokens,
         usd=usd,
     )
+
+
+def merge_usage(usages: Iterable[Mapping[str, ModelUsage]]) -> dict[str, ModelUsage]:
+    """Sum per-model token counts across several usage snapshots.
+
+    Each persona in an eval run records into its own isolated budget so its cost is exact under
+    concurrency; this folds those per-persona snapshots into the run's grand total.
+    """
+    merged: dict[str, ModelUsage] = {}
+    for usage in usages:
+        for model, used in usage.items():
+            prior = merged.get(model, ModelUsage(input_tokens=0, output_tokens=0))
+            merged[model] = ModelUsage(
+                input_tokens=prior.input_tokens + used.input_tokens,
+                output_tokens=prior.output_tokens + used.output_tokens,
+                cached_input_tokens=prior.cached_input_tokens + used.cached_input_tokens,
+            )
+    return merged
 
 
 def summarize_actual_cost(

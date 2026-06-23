@@ -3,10 +3,34 @@ from sotellme.pricing import (
     ModelUsage,
     cost_usd,
     estimate_session_cost,
+    merge_usage,
     summarize_actual_cost,
 )
 
 PRICES = {"cheap": ModelPrice(input=1.0, output=2.0)}
+
+
+def test_merge_usage_sums_per_model_token_counts_across_snapshots() -> None:
+    one = {"opus": ModelUsage(input_tokens=100, output_tokens=20, cached_input_tokens=10)}
+    two = {"opus": ModelUsage(input_tokens=80, output_tokens=30, cached_input_tokens=5)}
+
+    assert merge_usage([one, two]) == {
+        "opus": ModelUsage(input_tokens=180, output_tokens=50, cached_input_tokens=15)
+    }
+
+
+def test_merge_usage_keeps_models_that_appear_in_only_one_snapshot() -> None:
+    one = {"opus": ModelUsage(input_tokens=100, output_tokens=20)}
+    two = {"sonnet": ModelUsage(input_tokens=40, output_tokens=15)}
+
+    assert merge_usage([one, two]) == {
+        "opus": ModelUsage(input_tokens=100, output_tokens=20),
+        "sonnet": ModelUsage(input_tokens=40, output_tokens=15),
+    }
+
+
+def test_merge_usage_of_nothing_is_empty() -> None:
+    assert merge_usage([]) == {}
 
 
 def default_prices() -> dict[str, ModelPrice]:

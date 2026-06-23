@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from threading import Lock
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -18,10 +19,11 @@ from sotellme.budget import BudgetCallback
 from sotellme.catalog import ModelPrice
 from sotellme.config import ModelConfig, build_chat_model
 from sotellme.eval_datasets import apply_limit, langfuse_client
+from sotellme.eval_progress import EvalProgress
 from sotellme.grader import GradingError
 from sotellme.judge import JudgeError, QuestionJudge
 from sotellme.personas import AnswerBehavior, Persona
-from sotellme.pricing import format_cost_summary, summarize_actual_cost
+from sotellme.pricing import ModelUsage, format_cost_summary, merge_usage, summarize_actual_cost
 from sotellme.role import TargetLevel
 from sotellme.simulation import (
     judge_session,
@@ -145,25 +147,36 @@ def run_simulation_experiment(
     from langfuse import Evaluation
 
     client: Langfuse = langfuse_client(env)
-    budget = BudgetCallback()
-    callbacks: list[BaseCallbackHandler] = [budget]
-
-    simulator_model = build_chat_model(config, "fast")
-    simulator_model.callbacks = [budget]
-    simulator = CandidateSimulator(simulator_model, config.provider)
-
-    judge_model = build_chat_model(config, "smart")
-    judge_model.callbacks = [budget]
-    judge = QuestionJudge(judge_model, config.provider)
 
     dataset = client.get_dataset(dataset_name)
     items = apply_limit(select_persona_items(dataset.items, persona_names), limit)
 
+    # Personas run concurrently (independent interviews), so each gets its own budget for an
+    # exact per-persona cost; a lock guards the running total and the per-persona usage we fold
+    # into the run's grand total at the end.
+    progress = EvalProgress(len(items))
+    order = {item.input["name"]: position for position, item in enumerate(items, start=1)}
+    cost_lock = Lock()
+    running_usd = [0.0]
+    collected_usage: list[dict[str, ModelUsage]] = []
+
     def task(*, item: Any, **_: Any) -> dict[str, Any]:
         persona = Persona.model_validate(item.input)
+        index = order[persona.name]
+        progress.start(index, persona.name)
+
+        persona_budget = BudgetCallback()
+        persona_callbacks: list[BaseCallbackHandler] = [persona_budget]
+        simulator_model = build_chat_model(config, "fast")
+        simulator_model.callbacks = persona_callbacks
+        simulator = CandidateSimulator(simulator_model, config.provider)
+        judge_model = build_chat_model(config, "smart")
+        judge_model.callbacks = persona_callbacks
+        judge = QuestionJudge(judge_model, config.provider)
+
         try:
             session = run_persona_simulation(
-                persona, simulator, config, callbacks, data_dir, cv_dir, max_turns
+                persona, simulator, config, persona_callbacks, data_dir, cv_dir, max_turns
             )
         except GradingError as exc:
             raise GradingError(exc.diagnostic()) from exc
@@ -174,6 +187,20 @@ def run_simulation_experiment(
             )
         except JudgeError as exc:
             raise JudgeError(exc.diagnostic()) from exc
+
+        persona_usd = summarize_actual_cost(persona_budget.usage, prices).usd
+        with cost_lock:
+            running_usd[0] += persona_usd
+            total_usd = running_usd[0]
+            collected_usage.append(persona_budget.usage)
+        progress.finish(
+            index,
+            persona.name,
+            turns=session.turns,
+            finished_reason=session.finished_reason,
+            persona_usd=persona_usd,
+            total_usd=total_usd,
+        )
         return {"session": session.model_dump(), "judgement": judgement.model_dump()}
 
     def evaluator(*, output: Any, **_: Any) -> list[Evaluation]:
@@ -200,5 +227,5 @@ def run_simulation_experiment(
         evaluators=[evaluator],
     )
     client.flush()
-    cost = format_cost_summary(summarize_actual_cost(budget.usage, prices))
+    cost = format_cost_summary(summarize_actual_cost(merge_usage(collected_usage), prices))
     return f"{result.format(include_item_results=True)}\n\n{cost}"
