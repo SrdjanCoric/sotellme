@@ -5,7 +5,5 @@
   "posting": "Senior Engineer, Helios Fintech. Own a core platform end to end, set technical direction, mentor, and make defensible trade-offs at scale. We look for depth you can substantiate, strategic leadership, and measurable impact. Stack: JVM languages, Kafka, Cassandra. 6+ years.",
   "profile": "Presents as senior and answers fluently and confidently, but the substance is thin under pressure: sweeping claims ('10x', 'I led it') that dissolve into vagueness when probed for the specific decision, number, or her exact role. Not malicious - habitually oversells. The interviewer should probe for substantiation; a good one exposes the gap, a poor one is dazzled by the confidence.",
   "base_behavior": "confident_bluffer",
-  "planted_turns": [
-    { "turn": 4, "behavior": "inappropriate" }
-  ]
+  "planted_turns": []
 }

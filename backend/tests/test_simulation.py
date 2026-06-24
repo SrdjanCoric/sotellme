@@ -9,6 +9,7 @@ from sotellme.catalog import ModelPrice
 from sotellme.director import DirectorDecision, DirectorSituation
 from sotellme.engine import SessionSnapshot, TurnResult
 from sotellme.grader import AnswerScore, SessionGrade
+from sotellme.guardrail import GuardrailState, GuardrailVerdict, resolve_turn
 from sotellme.interviewer import Turn
 from sotellme.judge import (
     CompetencyCoverage,
@@ -39,6 +40,8 @@ from sotellme.simulation import (
     write_persona_cv,
     write_session_artifact,
 )
+
+PERSONAS_DIR = Path(__file__).parent.parent / "evals" / "personas"
 
 
 def test_no_web_research_refuses_every_fetch_so_briefs_stay_on_the_posting() -> None:
@@ -172,6 +175,137 @@ def test_simulate_session_flags_an_early_termination(tmp_path: Path) -> None:
 
     assert session.finished_reason == "terminated"
     assert session.turns == 2
+
+
+def _max_planted_turn() -> int:
+    from sotellme.personas import load_personas
+
+    turns = [t.turn for p in load_personas(PERSONAS_DIR) for t in p.planted_turns]
+    return max(turns, default=0)
+
+
+# Pose enough questions to reach past every committed persona's latest planted turn, so a
+# persona's late-interview behavior is actually exercised rather than the interview ending first.
+# Derived from the fixtures so it can't silently fall behind a newly planted turn.
+NORMAL_INTERVIEW_QUESTIONS = _max_planted_turn() + 2
+
+
+class BehaviorTagSimulator:
+    """Answers with the persona's behavior tag so a guardrail-aware fake engine can screen it.
+
+    Faithful to the production `CandidateSimulator`, which keys its behavior off
+    `len(transcript) + 1`: a guardrail redirect does not grow the transcript, so the same turn's
+    behavior is produced again on the re-pose. A persona scripted to be off-topic therefore
+    drifts again when nudged, and the second consecutive off-topic escalates to terminate.
+    """
+
+    def answer(self, persona: Persona, question: str, transcript: Sequence[Turn]) -> str:
+        return persona.behavior_for(len(transcript) + 1)
+
+
+class GuardrailFakeEngine:
+    """A fake engine that screens each answer through the real guardrail policy (Task 0031).
+
+    It mirrors the production seam: an allowed answer grows the transcript and advances to the
+    next question; a redirect re-poses the same question without growing the transcript (so a
+    persona that keeps drifting is screened again at the same turn and escalates to terminate);
+    an `inappropriate` answer terminates on the first screen. That verdict-to-TurnResult mapping
+    is pinned against the real engine by
+    `test_engine.py::test_each_guardrail_verdict_maps_to_the_turn_result_contract`, so this double
+    cannot silently drift from production.
+    """
+
+    def __init__(self, num_questions: int) -> None:
+        self._num_questions = num_questions
+        self._posed = 0
+        self._answers: list[str] = []
+        self._state = GuardrailState()
+
+    def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
+        return SessionSnapshot(thread_id="t", profile=_PROFILE, needs_level=True)
+
+    def submit_level(self, thread_id: str, level: str) -> SessionSnapshot:
+        self._posed = 1
+        return SessionSnapshot(
+            thread_id=thread_id, profile=_PROFILE, needs_level=False, question="Q1"
+        )
+
+    def _transcript(self) -> list[Turn]:
+        return [
+            Turn(question=f"Q{i + 1}", answer=self._answers[i]) for i in range(len(self._answers))
+        ]
+
+    def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
+        raw: GuardrailVerdict = (
+            "terminate"
+            if answer == "inappropriate"
+            else "redirect"
+            if answer == "off_topic"
+            else "allow"
+        )
+        verdict, self._state = resolve_turn(raw, self._state)
+        if verdict == "terminate":
+            return TurnResult(
+                next_question=None,
+                closing="Ended early.",
+                ended_early=True,
+                transcript=self._transcript(),
+            )
+        if verdict == "redirect":
+            # Must not grow the transcript, so the drifting persona is screened at the same turn.
+            return TurnResult(
+                next_question="Please answer the question.", transcript=self._transcript()
+            )
+        self._answers.append(answer)
+        if self._posed >= self._num_questions:
+            return TurnResult(next_question=None, closing="Thanks.", transcript=self._transcript())
+        self._posed += 1
+        return TurnResult(next_question=f"Q{self._posed}", transcript=self._transcript())
+
+
+def _persona_names(*, expected_to_terminate: bool) -> list[str]:
+    from sotellme.personas import load_personas
+
+    return [
+        p.name
+        for p in load_personas(PERSONAS_DIR)
+        if p.expected_to_terminate == expected_to_terminate
+    ]
+
+
+def _simulate(name: str, tmp_path: Path) -> SimulatedSession:
+    from sotellme.personas import load_personas
+
+    persona = {p.name: p for p in load_personas(PERSONAS_DIR)}[name]
+    return simulate_session(
+        GuardrailFakeEngine(num_questions=NORMAL_INTERVIEW_QUESTIONS),
+        BehaviorTagSimulator(),
+        persona,
+        tmp_path / "cv.md",
+        TurnRecorder(),
+        max_turns=NORMAL_INTERVIEW_QUESTIONS * 2 + 4,
+    )
+
+
+@pytest.mark.parametrize("name", _persona_names(expected_to_terminate=False))
+def test_coverage_personas_run_full_length_under_the_guardrail(name: str, tmp_path: Path) -> None:
+    # Every coverage persona must finish a normal close, not self-terminate, so the coverage
+    # judge scores a complete transcript (Task 0040). Deriving the list from the committed
+    # personas means a new coverage persona that self-terminates fails here rather than slipping
+    # through a hardcoded list.
+    session = _simulate(name, tmp_path)
+
+    assert session.finished_reason != "terminated"
+
+
+@pytest.mark.parametrize("name", _persona_names(expected_to_terminate=True))
+def test_termination_personas_terminate_under_the_guardrail(name: str, tmp_path: Path) -> None:
+    # The contrast case: a persona built to terminate must actually terminate. staff-injection
+    # exercises the first-screen manipulation path (Task 0034); mid-offtopic exercises the
+    # off-topic redirect-then-escalate path (the real resolve_turn cap).
+    session = _simulate(name, tmp_path)
+
+    assert session.finished_reason == "terminated"
 
 
 _CONTEXT = RoleContext(

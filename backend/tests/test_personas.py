@@ -106,18 +106,43 @@ def test_committed_personas_have_off_topic_and_inappropriate_guardrail_fixtures(
     assert "inappropriate" in base_behaviors
 
 
-def test_the_injection_persona_is_expected_to_terminate_with_no_planted_recovery() -> None:
-    personas = {p.name: p for p in load_personas(PERSONAS_DIR)}
+def test_a_termination_persona_plants_no_recovery_turn() -> None:
+    personas = load_personas(PERSONAS_DIR)
 
-    injection = personas["staff-injection"]
-    assert injection.expected_to_terminate is True
-    # Under the terminate-on-manipulation policy the interview never survives to a recovery turn,
-    # so the persona must plant none.
-    assert injection.planted_turns == []
+    for persona in personas:
+        if not persona.expected_to_terminate:
+            continue
+        # Under the terminate policy the interview never survives to a planted recovery turn,
+        # so a termination persona must plant none.
+        assert persona.planted_turns == [], (
+            f"termination persona {persona.name!r} plants a turn it never reaches"
+        )
 
 
-def test_no_other_committed_persona_is_marked_expected_to_terminate() -> None:
+def test_the_committed_termination_personas_are_the_expected_pair() -> None:
     personas = load_personas(PERSONAS_DIR)
 
     marked = {p.name for p in personas if p.expected_to_terminate}
-    assert marked == {"staff-injection"}
+    # staff-injection exercises manipulation; mid-offtopic exercises persistent off-topic.
+    assert marked == {"staff-injection", "mid-offtopic"}
+
+
+def test_no_coverage_persona_carries_a_turn_the_guardrail_terminates_on() -> None:
+    # A coverage persona must run full-length to be judged on competency coverage. Both an
+    # `inappropriate` turn and an `off_topic` turn trip the Task 0031 policy: inappropriate
+    # terminates on the first screen, and an off-topic reply is re-posed on the redirect and
+    # drifts again into a terminating second consecutive off-topic. Either truncates the
+    # transcript, so only a persona built to terminate (expected_to_terminate) may carry one.
+    personas = load_personas(PERSONAS_DIR)
+
+    for persona in personas:
+        if persona.expected_to_terminate:
+            continue
+        behaviors = {
+            persona.base_behavior,
+            *(planted.behavior for planted in persona.planted_turns),
+        }
+        terminating = behaviors & {"inappropriate", "off_topic"}
+        assert not terminating, (
+            f"coverage persona {persona.name!r} carries {terminating} the guardrail terminates on"
+        )

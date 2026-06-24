@@ -5,7 +5,5 @@
   "posting": "Junior Backend Engineer, Nimbus Tickets. You'll work on our event-ticketing API alongside senior engineers, ship small features end to end, write tests, and learn our stack (Python, PostgreSQL, AWS). We look for problem-solving, a bias to ask questions, and steady delivery on scoped work. 0-2 years experience.",
   "profile": "Early-career, eager but light on specifics. Tends to answer at a high level without naming the concrete task, action, or measurable result. Often says 'we' for work a senior actually drove. Honest, not a bluffer - just thin on detail and quick to wrap up.",
   "base_behavior": "thin",
-  "planted_turns": [
-    { "turn": 4, "behavior": "off_topic" }
-  ]
+  "planted_turns": []
 }
