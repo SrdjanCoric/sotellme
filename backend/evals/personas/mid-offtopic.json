@@ -3,9 +3,8 @@
   "target_level": "mid",
   "cv": "Davor Mestrovic\nSoftware Engineer\n\nGlasshouse Media (2020-present) - Backend Engineer\n- Maintains the content-ingestion pipeline (Go), ~500 publishers feeding in daily.\n- Built a deduplication step that cut storage costs by roughly 20%.\n- Set up the team's first integration-test suite.\n\nQuanta Retail (2018-2020) - Software Engineer\n- Worked on the inventory-sync service.\n\nEducation: BSc Information Systems, 2018.\n\nSkills: Go, PostgreSQL, Redis, gRPC, AWS.",
   "posting": "Backend Engineer, Glasshouse Media. Own and evolve our content pipeline, handle scale and reliability, and collaborate across teams. We value initiative, clear ownership, and grace under ambiguity. Stack: Go, gRPC, PostgreSQL, AWS. 3-6 years.",
-  "profile": "Capable engineer who consistently drifts off the question - asked about a conflict, he'll describe the architecture instead; asked for a result, he'll pivot to an unrelated project he's prouder of. Not evasive on purpose, just poor at staying on the asked topic. Doubles as an off-topic guardrail fixture.",
+  "profile": "Capable engineer who consistently drifts off the question - asked about a conflict, he'll describe the architecture instead; asked for a result, he'll pivot to an unrelated project he's prouder of. Not evasive on purpose, just poor at staying on the asked topic. The dedicated off-topic termination fixture: a persistent drifter the guardrail redirects once, then ends the session on the next off-topic reply.",
   "base_behavior": "off_topic",
-  "planted_turns": [
-    { "turn": 2, "behavior": "complete_star" }
-  ]
+  "expected_to_terminate": true,
+  "planted_turns": []
 }

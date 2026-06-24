@@ -6,7 +6,6 @@
   "profile": "Strong senior who tells complete, quantified STAR stories with clear personal ownership and crisp trade-off reasoning. Names what he decided and why, and what he'd do differently. The benchmark for a good answer - useful for catching an interviewer that over-probes a strong response.",
   "base_behavior": "complete_star",
   "planted_turns": [
-    { "turn": 6, "behavior": "strong_terse" },
-    { "turn": 8, "behavior": "off_topic" }
+    { "turn": 6, "behavior": "strong_terse" }
   ]
 }

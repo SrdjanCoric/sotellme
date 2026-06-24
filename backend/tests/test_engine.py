@@ -1318,3 +1318,34 @@ def test_an_allowed_answer_resets_the_consecutive_redirect_count(tmp_path: Path)
     assert not second_redirect.finished
     assert second_redirect.next_question is not None
     assert second_redirect.next_question.startswith("Let's stay with the interview.")
+
+
+def test_each_guardrail_verdict_maps_to_the_turn_result_contract(tmp_path: Path) -> None:
+    # The production screen-node contract that test_simulation.py's GuardrailFakeEngine mirrors:
+    # an allowed answer joins the transcript and advances to the next question; a redirect
+    # re-poses the same question without growing the transcript; a second consecutive redirect
+    # escalates to terminate, ending the session early over the partial transcript. Pins the full
+    # TurnResult mapping in one place so the simulation double cannot drift from production.
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    guardrail = ScriptedGuardrail(["allow", "redirect", "redirect"])
+    with build_engine(tmp_path / "data", director=director, guardrail=guardrail) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+
+        allowed = engine.submit_answer(session.thread_id, "A real, complete story.")
+        assert not allowed.finished
+        assert not allowed.ended_early
+        assert allowed.next_question is not None
+        assert [turn.answer for turn in allowed.transcript] == ["A real, complete story."]
+        posed = allowed.next_question
+
+        redirect = engine.submit_answer(session.thread_id, "What's the weather today?")
+        assert not redirect.finished
+        assert not redirect.ended_early
+        assert redirect.next_question == f"Let's stay with the interview. {posed}"
+        assert [turn.answer for turn in redirect.transcript] == ["A real, complete story."]
+
+        terminated = engine.submit_answer(session.thread_id, "Still off topic, sorry.")
+
+    assert terminated.finished
+    assert terminated.ended_early
+    assert [turn.answer for turn in terminated.transcript] == ["A real, complete story."]
