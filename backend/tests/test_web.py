@@ -493,6 +493,30 @@ def test_progress_keeps_the_status_expanded_on_each_new_stage() -> None:
     assert len(status.updates) == 2
 
 
+def test_progress_label_carries_no_call_count_suffix() -> None:
+    progress = _ModelProgress()
+    status = _FakeStatus()
+    progress.aim(status, "Reading your CV")
+
+    for _ in range(4):
+        progress.on_chat_model_start(tags=[f"{AGENT_TAG_PREFIX}researcher"])
+
+    labels = [update.get("label") for update in status.updates]
+    assert labels == ["Reading your CV"] * 4
+
+
+def test_progress_writes_one_line_per_distinct_phase_and_collapses_repeats() -> None:
+    progress = _ModelProgress()
+    status = _FakeStatus()
+    progress.aim(status, "Reading your CV")
+
+    progress.on_chat_model_start(tags=[f"{AGENT_TAG_PREFIX}researcher"])
+    progress.on_chat_model_start(tags=[f"{AGENT_TAG_PREFIX}researcher"])
+    progress.on_chat_model_start(tags=[f"{AGENT_TAG_PREFIX}director"])
+
+    assert status.writes == ["Researching the company", "Choosing the next question"]
+
+
 def test_agent_step_label_maps_a_tagged_agent_to_a_friendly_line() -> None:
     assert agent_step_label([f"{AGENT_TAG_PREFIX}grader"]) == "Grading your answers"
     assert agent_step_label([f"{AGENT_TAG_PREFIX}coach"]) == "Writing your coaching"
