@@ -292,14 +292,12 @@ class _ModelProgress(BaseCallbackHandler):
     def __init__(self) -> None:
         self._status: Any = None
         self._label = ""
-        self._step = 0
         self._last_written: str | None = None
 
     def aim(self, status: Any, label: str) -> None:
-        """Point progress updates at a status widget and reset the step counter."""
+        """Point progress updates at a status widget and reset its phase memory."""
         self._status = status
         self._label = label
-        self._step = 0
         self._last_written = None
 
     def clear(self) -> None:
@@ -307,12 +305,11 @@ class _ModelProgress(BaseCallbackHandler):
         self._status = None
 
     def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
-        """Advance the step counter and update the status label on each model start."""
+        """Keep the status expanded and write a line per distinct agent phase."""
         if self._status is None:
             return
-        self._step += 1
         try:
-            self._status.update(label=f"{self._label} ({self._step})", expanded=True)
+            self._status.update(label=self._label, expanded=True)
             step_label = agent_step_label(kwargs.get("tags"))
             if step_label is not None and step_label != self._last_written:
                 self._status.write(step_label)
