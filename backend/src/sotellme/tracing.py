@@ -78,4 +78,9 @@ def trace_session(
         return nullcontext()
     from langfuse import propagate_attributes
 
-    return propagate_attributes(session_id=session_id, user_id=user_id, tags=tags)
+    # Bind to a typed local: without the tracing extra installed, langfuse is untyped (Any),
+    # and returning Any directly trips mypy's --strict no-any-return in that CI configuration.
+    propagation: AbstractContextManager[object] = propagate_attributes(
+        session_id=session_id, user_id=user_id, tags=tags
+    )
+    return propagation
