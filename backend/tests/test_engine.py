@@ -1,10 +1,12 @@
 import logging
 import threading
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
+import sotellme.engine
 from sotellme.assessor import AnswerAssessment, StarFlags
 from sotellme.budget import DEFAULT_TOKEN_BUDGET
 from sotellme.coach import AnswerAdvice, CoachReport, Drill
@@ -243,6 +245,7 @@ def build_engine(
     follow_up_cap: int = 6,
     reprompt_cap: int = 1,
     token_budget: int = DEFAULT_TOKEN_BUDGET,
+    user_id: str | None = None,
 ) -> InterviewEngine:
     return InterviewEngine(
         data_dir=data_dir,
@@ -259,6 +262,7 @@ def build_engine(
         follow_up_cap=follow_up_cap,
         reprompt_cap=reprompt_cap,
         token_budget=token_budget,
+        user_id=user_id,
     )
 
 
@@ -564,6 +568,69 @@ def test_replay_from_skips_a_session_with_no_checkpoint_for_the_node(tmp_path: P
 
         with pytest.raises(EngineError, match="no checkpoint before 'grade'"):
             engine.replay_from(session.thread_id, "grade")
+
+
+def _record_trace_sessions(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Replace the engine's trace_session with a recorder of its (session_id, user_id, tags)."""
+    calls: list[dict[str, object]] = []
+
+    @contextmanager
+    def recorder(
+        session_id: str, user_id: str | None = None, tags: list[str] | None = None
+    ) -> Iterator[None]:
+        calls.append({"session_id": session_id, "user_id": user_id, "tags": tags})
+        yield
+
+    monkeypatch.setattr(sotellme.engine, "trace_session", recorder)
+    return calls
+
+
+def test_every_invoke_path_runs_inside_a_trace_session_keyed_to_the_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _record_trace_sessions(monkeypatch)
+    builder = builder_returning(acme_context(target_level=None))
+    with build_engine(tmp_path / "data", role_builder=builder, user_id="acct-7") as engine:
+        # a posting drives the role builder (company/role), but states no level — so it is asked
+        session = engine.start(write_cv(tmp_path), posting_text="Backend role at Acme")
+        assert session.needs_level
+        engine.submit_level(session.thread_id, "mid")
+        closing = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        assert closing.report_pending
+        engine.finalize_report(session.thread_id)
+        engine.replay_from(session.thread_id)
+
+    # start, submit_level, submit_answer, finalize_report, replay_from each wrap one invoke
+    assert len(calls) == 5
+    # every turn groups under the same session id and carries the engine's optional identity
+    assert {call["session_id"] for call in calls} == {session.thread_id}
+    assert {call["user_id"] for call in calls} == {"acct-7"}
+
+    tags = [call["tags"] for call in calls]
+    # start wraps before the role context is built, so it has no tags yet
+    assert tags[0] is None
+    # submit_level sees the role context before the level is applied — level omitted
+    assert tags[1] == ["Acme", "Senior Backend Engineer"]
+    # once the level is set, every later turn carries company / role / level
+    assert tags[2] == ["Acme", "Senior Backend Engineer", "mid"]
+    assert tags[3] == ["Acme", "Senior Backend Engineer", "mid"]
+    assert tags[4] == ["Acme", "Senior Backend Engineer", "mid"]
+
+
+def test_trace_session_user_id_defaults_to_none_without_changing_behavior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _record_trace_sessions(monkeypatch)
+    with build_engine(tmp_path / "data") as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = finish(engine, session.thread_id, "A strong, complete story.")
+
+    # tracing is purely a wrapper: the session still grades and coaches as usual
+    assert result.finished
+    assert result.grade is not None
+    assert result.coach is not None
+    assert calls, "each invoke must run inside trace_session"
+    assert all(call["user_id"] is None for call in calls)
 
 
 def test_a_finished_session_carries_the_grade_over_the_real_transcript(tmp_path: Path) -> None:
