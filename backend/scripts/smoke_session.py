@@ -152,11 +152,14 @@ def run_smoke_session(data_dir: Path, cv_path: Path) -> str:
         assert session.needs_level, "a session without a posting must ask for the target level"
         session = engine.submit_level(session.thread_id, "senior")
         assert session.question is not None, "the opener question should be posed after setup"
-        result = engine.submit_answer(
+        closing_beat = engine.submit_answer(
             session.thread_id, "Situation, task, action, result, quantified — enough signal."
         )
+        assert closing_beat.report_pending, "the scripted wrap-up should pause at the closing beat"
+        assert closing_beat.closing, "the closing beat should carry the closing turn"
+        result = engine.finalize_report(session.thread_id)
 
-    assert result.finished, "the scripted wrap-up should finish the session"
+    assert result.finished, "finalizing the report beat should finish the session"
     assert result.closing, "a finished session should carry a closing turn"
     assert result.grade is not None, "a finished session should carry a grade"
     assert result.coach is not None, "a finished session should carry a coaching report"
