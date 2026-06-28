@@ -29,7 +29,9 @@ from sotellme.web import (
     TURN_ERRORS,
     WebState,
     _ModelProgress,
+    _render_closing,
     _render_level,
+    _render_test_autopilot,
     _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
@@ -46,6 +48,7 @@ from sotellme.web import (
     session_primary_line,
     session_secondary_line,
     state_after_answer,
+    state_after_finalize,
     state_from_snapshot,
 )
 
@@ -467,6 +470,145 @@ def test_chat_messages_end_on_the_closing_line_when_finished() -> None:
         ("user", "I led the migration."),
         ("assistant", "Thanks for that."),
     ]
+
+
+def _closing_beat(closing: str = "Thanks for walking me through it.") -> WebState:
+    return state_after_answer(
+        interviewing("Tell me about a project."),
+        "I led the migration.",
+        TurnResult(next_question=None, closing=closing, report_pending=True, transcript=[]),
+    )
+
+
+def test_a_closing_beat_is_its_own_phase_distinct_from_interview_and_report() -> None:
+    state = _closing_beat()
+
+    assert phase_of(state) == "closing"
+    assert not state.finished
+
+
+def test_the_closing_beat_renders_the_goodbye_as_the_final_assistant_bubble() -> None:
+    state = _closing_beat()
+
+    messages = chat_messages(state)
+
+    assert messages == [
+        ("assistant", "Tell me about a project."),
+        ("user", "I led the migration."),
+        ("assistant", "Thanks for walking me through it."),
+    ]
+    assert messages[-1] == ("assistant", "Thanks for walking me through it.")
+
+
+def test_finalizing_a_closing_beat_carries_the_report_and_resolves_to_the_report_view() -> None:
+    grade = _scored_grade()
+    coach = _coach_report()
+    transcript = [Turn(question="Tell me about a project.", answer="I led the migration.")]
+
+    finished = state_after_finalize(
+        _closing_beat(),
+        TurnResult(
+            next_question=None,
+            closing="Thanks for walking me through it.",
+            grade=grade,
+            coach=coach,
+            transcript=transcript,
+        ),
+    )
+
+    assert phase_of(finished) == "report"
+    assert finished.grade is grade
+    assert finished.coach is coach
+    assert finished.transcript == transcript
+    view = resolve_report_view(finished)
+    assert view.coaching is coach
+    assert view.notice is None
+
+
+class _FakeSessionState(dict[str, object]):
+    """Stand-in for st.session_state: supports both attribute and item access, plus pop."""
+
+    def __getattr__(self, name: str) -> object:
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __setattr__(self, name: str, value: object) -> None:
+        self[name] = value
+
+
+def _fake_interview_streamlit(session_state: _FakeSessionState) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        caption=lambda *a, **k: None,
+        chat_message=lambda role: types.SimpleNamespace(write=lambda content: None),
+        chat_input=lambda *a, **k: None,
+        spinner=lambda *a, **k: _FakeStatusContext(),
+        status=lambda *a, **k: _FakeStatusContext(),
+        button=lambda *a, **k: True,
+        error=lambda *a, **k: None,
+        rerun=lambda *a, **k: None,
+        session_state=session_state,
+    )
+
+
+class _TwoBeatEngine:
+    """Engine double whose every answer wraps to the closing beat, then finalizes to a report."""
+
+    def __init__(self) -> None:
+        self.finalized = False
+
+    def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
+        return TurnResult(
+            next_question=None,
+            closing="That's a wrap, thanks.",
+            report_pending=True,
+            transcript=[Turn(question="Tell me about a project.", answer=answer)],
+        )
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        self.finalized = True
+        return TurnResult(
+            next_question=None,
+            closing="That's a wrap, thanks.",
+            grade=_scored_grade(),
+            coach=_coach_report(),
+            transcript=[Turn(question="Tell me about a project.", answer="I led the migration.")],
+        )
+
+
+def test_render_closing_finalizes_and_advances_to_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_state = _FakeSessionState()
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_interview_streamlit(session_state))
+    engine = _TwoBeatEngine()
+
+    _render_closing(engine, _closing_beat())  # type: ignore[arg-type]
+
+    assert engine.finalized
+    advanced = session_state["state"]
+    assert isinstance(advanced, WebState)
+    assert phase_of(advanced) == "report"
+    assert advanced.grade is not None and advanced.coach is not None
+    assert "history_items" not in session_state
+
+
+def test_test_autopilot_drives_through_the_closing_beat_to_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOTELLME_TEST_MODE", "1")
+    session_state = _FakeSessionState()
+    monkeypatch.setitem(sys.modules, "streamlit", _fake_interview_streamlit(session_state))
+    engine = _TwoBeatEngine()
+
+    _render_test_autopilot(engine, interviewing("Tell me about a project."))  # type: ignore[arg-type]
+
+    assert engine.finalized
+    advanced = session_state["state"]
+    assert isinstance(advanced, WebState)
+    assert phase_of(advanced) == "report"
+    assert advanced.grade is not None and advanced.coach is not None
 
 
 class _FakeStatus:
