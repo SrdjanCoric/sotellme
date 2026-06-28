@@ -42,6 +42,7 @@ from sotellme.role import (
     default_role_context,
     level_emphasis,
 )
+from sotellme.tracing import trace_session
 
 CHECKPOINTED_TYPES = (
     CandidateProfile,
@@ -252,10 +253,12 @@ class InterviewEngine:
         reprompt_cap: int = DEFAULT_REPROMPT_CAP,
         token_budget: int = DEFAULT_TOKEN_BUDGET,
         callbacks: list[BaseCallbackHandler] | None = None,
+        user_id: str | None = None,
     ) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
         self._data_dir = data_dir
         self._token_budget = token_budget
+        self._user_id = user_id
         self._budget_callback = BudgetCallback()
         self._callbacks = [*(callbacks or []), self._budget_callback]
         self._conn = sqlite3.connect(data_dir / "checkpoints.sqlite", check_same_thread=False)
@@ -494,7 +497,10 @@ class InterviewEngine:
         initial: InterviewState = {"cv_path": str(cv_path)}
         if posting_text is not None:
             initial["posting_text"] = posting_text
-        self._graph.invoke(initial, self._config(thread_id))
+        # The role context is built inside this invoke, so only the session id is known yet;
+        # tags attach on the turns that follow.
+        with trace_session(thread_id, user_id=self._user_id):
+            self._graph.invoke(initial, self._config(thread_id))
         (self._data_dir / "latest").write_text(thread_id)
         return self._pending_session(thread_id)
 
@@ -589,7 +595,9 @@ class InterviewEngine:
         if level not in get_args(TargetLevel):
             valid = ", ".join(get_args(TargetLevel))
             raise EngineError(f"Unknown level {level!r}: choose one of {valid}.")
-        self._graph.invoke(Command(resume=level), self._config(thread_id))
+        tags = self._session_tags(self._role_context(thread_id))
+        with trace_session(thread_id, user_id=self._user_id, tags=tags):
+            self._graph.invoke(Command(resume=level), self._config(thread_id))
         return self._pending_session(thread_id)
 
     def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
@@ -607,7 +615,9 @@ class InterviewEngine:
             The turn result: the next question (or redirect) when more remains, otherwise the
             closing remark with ``report_pending`` set, awaiting ``finalize_report``.
         """
-        self._graph.invoke(Command(resume=answer), self._config(thread_id))
+        tags = self._session_tags(self._role_context(thread_id))
+        with trace_session(thread_id, user_id=self._user_id, tags=tags):
+            self._graph.invoke(Command(resume=answer), self._config(thread_id))
         state = self._graph.get_state(self._config(thread_id))
         if "grade" in state.next:
             return TurnResult(
@@ -646,7 +656,9 @@ class InterviewEngine:
         if state.next and "grade" not in state.next:
             raise EngineError("This session is still in the interview, not at the closing beat.")
         if state.next:
-            self._graph.invoke(None, self._config(thread_id))
+            tags = self._session_tags(state.values.get("role_context"))
+            with trace_session(thread_id, user_id=self._user_id, tags=tags):
+                self._graph.invoke(None, self._config(thread_id))
             state = self._graph.get_state(self._config(thread_id))
         return self._finished_result(state.values)
 
@@ -693,7 +705,9 @@ class InterviewEngine:
             "configurable": dict(fork.config["configurable"]),
             "callbacks": self._callbacks,
         }
-        self._graph.invoke(None, fork_config)
+        tags = self._session_tags(fork.values.get("role_context"))
+        with trace_session(thread_id, user_id=self._user_id, tags=tags):
+            self._graph.invoke(None, fork_config)
         state = self._graph.get_state(self._config(thread_id))
         return self._finished_result(state.values)
 
@@ -730,6 +744,26 @@ class InterviewEngine:
     def _config(self, thread_id: str) -> RunnableConfig:
         """Build the runnable config binding a thread id and the engine's callbacks"""
         return {"configurable": {"thread_id": thread_id}, "callbacks": self._callbacks}
+
+    def _role_context(self, thread_id: str) -> RoleContext | None:
+        """Read the role context from a thread's current checkpointed state, if any"""
+        return self._graph.get_state(self._config(thread_id)).values.get("role_context")
+
+    @staticmethod
+    def _session_tags(role_context: RoleContext | None) -> list[str] | None:
+        """Derive Langfuse trace tags (company/role/level) from role context, dropping unset ones"""
+        if role_context is None:
+            return None
+        tags = [
+            tag
+            for tag in (
+                role_context.company,
+                role_context.role_title,
+                role_context.target_level,
+            )
+            if tag
+        ]
+        return tags or None
 
     def _pending_session(self, thread_id: str) -> SessionSnapshot:
         """Snapshot a session, raising if it is already finished"""
