@@ -81,6 +81,7 @@ class FakeEngine:
         self._terminate_after = terminate_after
         self._posed = 0
         self.answers: list[str] = []
+        self._closing: TurnResult | None = None
 
     def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
         return SessionSnapshot(thread_id="t", profile=_PROFILE, needs_level=True)
@@ -98,19 +99,75 @@ class FakeEngine:
             Turn(question=self._questions[i], answer=self.answers[i]) for i in range(self._posed)
         ]
         if self._terminate_after is not None and len(self.answers) >= self._terminate_after:
-            return TurnResult(
-                next_question=None, closing="Ended early.", ended_early=True, transcript=transcript
+            self._closing = TurnResult(
+                next_question=None,
+                closing="Ended early.",
+                ended_early=True,
+                report_pending=True,
+                transcript=transcript,
             )
+            return self._closing
         if self._posed >= len(self._questions):
-            return TurnResult(next_question=None, closing="Thanks.", transcript=transcript)
+            self._closing = TurnResult(
+                next_question=None, closing="Thanks.", report_pending=True, transcript=transcript
+            )
+            return self._closing
         next_question = self._questions[self._posed]
         self._posed += 1
         return TurnResult(next_question=next_question, transcript=transcript)
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        assert self._closing is not None
+        return self._closing.model_copy(update={"report_pending": False})
 
 
 class EchoSimulator:
     def answer(self, persona: Persona, question: str, transcript: Sequence[Turn]) -> str:
         return f"answer to: {question}"
+
+
+class ReportBeatEngine:
+    """One-question engine that pauses at the closing beat, then finalizes to a grade and coach."""
+
+    def __init__(self, grade: SessionGrade) -> None:
+        self._grade = grade
+        self.finalized = False
+
+    def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
+        return SessionSnapshot(thread_id="t", profile=_PROFILE, needs_level=False, question="Q1")
+
+    def submit_level(self, thread_id: str, level: str) -> SessionSnapshot:  # pragma: no cover
+        raise AssertionError("this engine starts past the level")
+
+    def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
+        return TurnResult(
+            next_question=None,
+            closing="Thanks.",
+            report_pending=True,
+            transcript=[Turn(question="Q1", answer=answer)],
+        )
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        self.finalized = True
+        return TurnResult(
+            next_question=None,
+            closing="Thanks.",
+            grade=self._grade,
+            transcript=[Turn(question="Q1", answer="answer to: Q1")],
+        )
+
+
+def test_simulate_session_runs_the_report_beat_after_the_closing_pause(tmp_path: Path) -> None:
+    grade = SessionGrade(scores=[])
+    engine = ReportBeatEngine(grade)
+
+    session = simulate_session(
+        engine, EchoSimulator(), _persona(), tmp_path / "cv.md", TurnRecorder(), max_turns=20
+    )
+
+    assert engine.finalized
+    assert session.grade is grade
+    assert session.finished_reason == "completed"
 
 
 def test_simulate_session_drives_the_interview_to_completion(tmp_path: Path) -> None:
@@ -220,6 +277,7 @@ class GuardrailFakeEngine:
         self._posed = 0
         self._answers: list[str] = []
         self._state = GuardrailState()
+        self._closing: TurnResult | None = None
 
     def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
         return SessionSnapshot(thread_id="t", profile=_PROFILE, needs_level=True)
@@ -245,12 +303,14 @@ class GuardrailFakeEngine:
         )
         verdict, self._state = resolve_turn(raw, self._state)
         if verdict == "terminate":
-            return TurnResult(
+            self._closing = TurnResult(
                 next_question=None,
                 closing="Ended early.",
                 ended_early=True,
+                report_pending=True,
                 transcript=self._transcript(),
             )
+            return self._closing
         if verdict == "redirect":
             # Must not grow the transcript, so the drifting persona is screened at the same turn.
             return TurnResult(
@@ -258,9 +318,19 @@ class GuardrailFakeEngine:
             )
         self._answers.append(answer)
         if self._posed >= self._num_questions:
-            return TurnResult(next_question=None, closing="Thanks.", transcript=self._transcript())
+            self._closing = TurnResult(
+                next_question=None,
+                closing="Thanks.",
+                report_pending=True,
+                transcript=self._transcript(),
+            )
+            return self._closing
         self._posed += 1
         return TurnResult(next_question=f"Q{self._posed}", transcript=self._transcript())
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        assert self._closing is not None
+        return self._closing.model_copy(update={"report_pending": False})
 
 
 def _persona_names(*, expected_to_terminate: bool) -> list[str]:

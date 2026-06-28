@@ -469,12 +469,15 @@ def _run_session(
         level = ask_target_level(read_level, console.print)
         with console.status("Starting the session..."):
             session = engine.submit_level(session.thread_id, level)
+    # Seed from the snapshot so a session reopened at the closing beat (question already None,
+    # report pending) still shows its goodbye and runs the report beat below.
     question: str | None = session.question
-    closing: str | None = None
-    grade: SessionGrade | None = None
-    coach: CoachReport | None = None
-    transcript: list[Turn] = []
-    ended_early = False
+    closing: str | None = session.closing
+    grade: SessionGrade | None = session.grade
+    coach: CoachReport | None = session.coach
+    transcript: list[Turn] = list(session.transcript)
+    ended_early = session.ended_early
+    report_pending = session.report_pending
     while question is not None:
         console.print(Panel(question, title="Interviewer", border_style="cyan"))
         if answer_session is not None:
@@ -491,8 +494,17 @@ def _run_session(
         coach = result.coach
         transcript = result.transcript
         ended_early = result.ended_early
+        report_pending = result.report_pending
     if closing:
         console.print(Panel(closing, title="Interviewer", border_style="cyan"))
+    # The wrapping answer stops at the closing beat: show the goodbye, then run the report beat.
+    if report_pending:
+        with console.status("Generating coaching report..."):
+            result = engine.finalize_report(session.thread_id)
+        grade = result.grade
+        coach = result.coach
+        transcript = result.transcript
+        ended_early = result.ended_early
     has_scores = grade is not None and bool(grade.scores)
     if ended_early and not has_scores:
         console.print(f"\n[yellow]{ENDED_EARLY_EMPTY_MESSAGE}[/yellow]")

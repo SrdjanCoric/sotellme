@@ -176,6 +176,10 @@ class SessionEngine(Protocol):
         """Submit a candidate answer and advance the session by one turn."""
         ...
 
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        """Run the report beat for a session paused at the closing beat."""
+        ...
+
 
 class Simulator(Protocol):
     """Surface that produces a candidate's answer for a given question and transcript."""
@@ -577,6 +581,11 @@ def simulate_session(
         turns += 1
         transcript = list(result.transcript)
         question = result.next_question
+
+    # A wrapping answer stops at the closing beat; run the report beat to produce grade + coaching.
+    if result is not None and result.report_pending:
+        result = engine.finalize_report(thread_id)
+        transcript = list(result.transcript)
 
     if result is not None and result.ended_early:
         finished_reason = "terminated"

@@ -58,9 +58,10 @@ def test_injected_content_may_steer_the_path_but_never_breaks_the_envelope(
         assert session.question is not None
         questions = 1
         result = engine.submit_answer(session.thread_id, INJECTION)
-        while not result.finished:
+        while result.next_question is not None:
             questions += 1
             result = engine.submit_answer(session.thread_id, INJECTION)
 
     assert questions == cap
+    assert result.report_pending
     assert result.closing

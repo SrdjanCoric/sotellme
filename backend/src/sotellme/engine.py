@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, Self, TypedDict, get_args
+from typing import Any, Protocol, Self, TypedDict, get_args
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.runnables import RunnableConfig
@@ -166,6 +166,7 @@ class SessionSnapshot(BaseModel):
     question: str | None = None
     transcript: list[Turn] = []
     finished: bool = False
+    report_pending: bool = False
     ended_early: bool = False
     closing: str | None = None
     grade: SessionGrade | None = None
@@ -189,14 +190,19 @@ class TurnResult(BaseModel):
     next_question: str | None = None
     closing: str | None = None
     ended_early: bool = False
+    report_pending: bool = False
     grade: SessionGrade | None = None
     coach: CoachReport | None = None
     transcript: list[Turn] = []
 
     @property
     def finished(self) -> bool:
-        """Whether the session has finished, i.e. no next question remains"""
-        return self.next_question is None
+        """Whether the session is fully finished: closing shown and the report ready
+
+        A wrapping answer first pauses at the closing beat (``report_pending``), which is not yet
+        finished; ``finalize_report`` then runs grading and coaching and resolves this to True.
+        """
+        return self.next_question is None and not self.report_pending
 
 
 def _extract(state: InterviewState) -> InterviewState:
@@ -464,7 +470,9 @@ class InterviewEngine:
         serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINTED_TYPES)
         checkpointer = SqliteSaver(self._conn, serde=serde)
         checkpointer.setup()
-        self._graph = graph.compile(checkpointer=checkpointer)
+        # Pause after the closing remark and before grading: the closing beat. The web (and CLI)
+        # show the goodbye, then resume through grade + coach via finalize_report — the report beat.
+        self._graph = graph.compile(checkpointer=checkpointer, interrupt_before=["grade"])
 
     def start(self, cv_path: Path, posting_text: str | None = None) -> SessionSnapshot:
         """Start a new interview session and run it up to the first interruption.
@@ -585,31 +593,73 @@ class InterviewEngine:
         return self._pending_session(thread_id)
 
     def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
-        """Submit an answer to a session and advance to the next question or the end.
+        """Submit an answer to a session and advance to the next question or the closing beat.
+
+        When the interview wraps, the graph runs only as far as the closing remark and pauses
+        before grading — the closing beat. The result then carries the closing with
+        ``report_pending`` set; call ``finalize_report`` to run grading and coaching.
 
         Args:
             thread_id: Identifier of the session's graph thread.
             answer: The candidate's answer to the current question.
 
         Returns:
-            The turn result: the next question (or redirect) when more remains, otherwise
-            the closing remark, grade, and coaching report.
+            The turn result: the next question (or redirect) when more remains, otherwise the
+            closing remark with ``report_pending`` set, awaiting ``finalize_report``.
         """
         self._graph.invoke(Command(resume=answer), self._config(thread_id))
         state = self._graph.get_state(self._config(thread_id))
+        if "grade" in state.next:
+            return TurnResult(
+                next_question=None,
+                closing=state.values.get("closing"),
+                ended_early=state.values.get("ended_early", False),
+                report_pending=True,
+                transcript=state.values.get("transcript", []),
+            )
         if state.next:
             values = state.values
             return TurnResult(
                 next_question=values.get("redirect") or values["question"],
                 transcript=values.get("transcript", []),
             )
+        # Defensive: a wrapping answer always pauses at the closing beat above, so a live session
+        # never reaches here. Only re-submitting to an already-finished session lands here.
+        return self._finished_result(state.values)
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        """Run the report beat: resume a closing-beat session through grading and coaching.
+
+        Resumes the session paused at the closing beat and runs the grade and coach nodes to the
+        end. Calling it on an already-finished session is a no-op that returns the final result.
+
+        Args:
+            thread_id: Identifier of the session's graph thread.
+
+        Returns:
+            The finished turn result with the closing remark, grade, and coaching report.
+
+        Raises:
+            EngineError: If the session is still mid-interview rather than at the closing beat.
+        """
+        state = self._graph.get_state(self._config(thread_id))
+        if state.next and "grade" not in state.next:
+            raise EngineError("This session is still in the interview, not at the closing beat.")
+        if state.next:
+            self._graph.invoke(None, self._config(thread_id))
+            state = self._graph.get_state(self._config(thread_id))
+        return self._finished_result(state.values)
+
+    @staticmethod
+    def _finished_result(values: dict[str, Any]) -> TurnResult:
+        """Build the finished turn result from a fully-resolved graph state"""
         return TurnResult(
             next_question=None,
-            closing=state.values.get("closing"),
-            ended_early=state.values.get("ended_early", False),
-            grade=state.values.get("grade"),
-            coach=state.values.get("coach"),
-            transcript=state.values.get("transcript", []),
+            closing=values.get("closing"),
+            ended_early=values.get("ended_early", False),
+            grade=values.get("grade"),
+            coach=values.get("coach"),
+            transcript=values.get("transcript", []),
         )
 
     def replay_from(self, thread_id: str, node: str = "grade") -> TurnResult:
@@ -645,14 +695,7 @@ class InterviewEngine:
         }
         self._graph.invoke(None, fork_config)
         state = self._graph.get_state(self._config(thread_id))
-        return TurnResult(
-            next_question=None,
-            closing=state.values.get("closing"),
-            ended_early=state.values.get("ended_early", False),
-            grade=state.values.get("grade"),
-            coach=state.values.get("coach"),
-            transcript=state.values.get("transcript", []),
-        )
+        return self._finished_result(state.values)
 
     @property
     def budget_callback(self) -> BudgetCallback:
@@ -702,6 +745,7 @@ class InterviewEngine:
         if "profile" not in values:
             raise EngineError("This interview didn't get far enough to reopen.")
         needs_level = "ask_level" in state.next
+        report_pending = "grade" in state.next
         finished = not state.next
         role_context = values.get("role_context")
         return SessionSnapshot(
@@ -711,11 +755,12 @@ class InterviewEngine:
             level=role_context.target_level if role_context is not None else None,
             question=(
                 None
-                if needs_level or finished
+                if needs_level or report_pending or finished
                 else (values.get("redirect") or values.get("question"))
             ),
             transcript=list(values.get("transcript", [])),
             finished=finished,
+            report_pending=report_pending,
             ended_early=values.get("ended_early", False),
             closing=values.get("closing"),
             grade=values.get("grade"),

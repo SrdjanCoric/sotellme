@@ -69,7 +69,7 @@ DEFAULT_TEST_ANSWER = (
     "which I solved with idempotency keys and a reconciliation job."
 )
 
-Phase = Literal["setup", "level", "interview", "report"]
+Phase = Literal["setup", "level", "interview", "closing", "report"]
 
 ChatMessage = tuple[Literal["assistant", "user"], str]
 
@@ -85,6 +85,7 @@ class WebState:
     level: TargetLevel | None = None
     answered: list[Turn] = field(default_factory=list)
     finished: bool = False
+    report_pending: bool = False
     ended_early: bool = False
     closing: str | None = None
     grade: SessionGrade | None = None
@@ -102,6 +103,7 @@ def state_from_snapshot(snapshot: SessionSnapshot) -> WebState:
         level=snapshot.level,
         answered=list(snapshot.transcript),
         finished=snapshot.finished,
+        report_pending=snapshot.report_pending,
         ended_early=snapshot.ended_early,
         closing=snapshot.closing,
         grade=snapshot.grade,
@@ -121,11 +123,27 @@ def state_after_answer(state: WebState, answer: str, result: TurnResult) -> WebS
         answered=answered,
         question=result.next_question,
         finished=result.finished,
+        report_pending=result.report_pending,
         ended_early=result.ended_early,
         closing=result.closing,
         grade=result.grade,
         coach=result.coach,
         transcript=list(result.transcript) if result.finished else answered,
+    )
+
+
+def state_after_finalize(state: WebState, result: TurnResult) -> WebState:
+    """Advance a closing-beat state once the report beat (grade + coaching) completes."""
+    return replace(
+        state,
+        question=result.next_question,
+        finished=result.finished,
+        report_pending=result.report_pending,
+        ended_early=result.ended_early,
+        closing=result.closing,
+        grade=result.grade,
+        coach=result.coach,
+        transcript=list(result.transcript),
     )
 
 
@@ -174,6 +192,8 @@ def phase_of(state: WebState | None) -> Phase:
         return "level"
     if state.question is not None and not state.finished:
         return "interview"
+    if state.report_pending:
+        return "closing"
     return "report"
 
 
@@ -355,6 +375,8 @@ def run() -> None:
         return
     if phase == "level":
         _render_level(engine, state)
+    elif phase == "closing":
+        _render_closing(engine, state)
     else:
         _render_interview(engine, state)
 
@@ -644,6 +666,24 @@ def _render_interview(engine: InterviewEngine, state: WebState) -> None:
         st.rerun()
 
 
+def _render_closing(engine: InterviewEngine, state: WebState) -> None:
+    """Show the goodbye as the last chat bubble, then generate the report and move on."""
+    import streamlit as st
+
+    _render_level_caption(state)
+    for role, content in chat_messages(state):
+        st.chat_message(role).write(content)
+    with st.spinner("Generating coaching report"):
+        try:
+            result = engine.finalize_report(state.thread_id)
+        except TURN_ERRORS as exc:
+            st.error(str(exc))
+            return
+    st.session_state.state = state_after_finalize(state, result)
+    _invalidate_history()
+    st.rerun()
+
+
 def _test_answer() -> str | None:
     """Return the canned test answer when test mode is on, else None."""
     if not os.environ.get("SOTELLME_TEST_MODE"):
@@ -672,6 +712,14 @@ def _render_test_autopilot(engine: InterviewEngine, state: WebState) -> None:
                 st.session_state.state = current
                 return
             current = state_after_answer(current, answer, result)
+        if phase_of(current) == "closing":
+            try:
+                current = state_after_finalize(current, engine.finalize_report(current.thread_id))
+            except TURN_ERRORS as exc:
+                status.update(state="error")
+                st.error(str(exc))
+                st.session_state.state = current
+                return
     st.session_state.state = current
     _invalidate_history()
     st.rerun()

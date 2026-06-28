@@ -17,6 +17,7 @@ from sotellme.engine import (
     RoleBuilder,
     SessionListItem,
     SessionSnapshot,
+    TurnResult,
 )
 from sotellme.grader import AnswerScore, SessionGrade
 from sotellme.guardrail import GuardrailVerdict
@@ -276,6 +277,13 @@ def start_past_setup(
     return session
 
 
+def finish(engine: InterviewEngine, thread_id: str, answer: str) -> TurnResult:
+    """Submit the wrapping answer (the closing beat), then run the report beat to the end."""
+    closing_beat = engine.submit_answer(thread_id, answer)
+    assert closing_beat.report_pending, "a wrapping answer must pause at the closing beat"
+    return engine.finalize_report(thread_id)
+
+
 def test_start_poses_the_directors_opening_topic(tmp_path: Path) -> None:
     with build_engine(tmp_path / "data") as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
@@ -336,10 +344,107 @@ def test_a_wrap_up_decision_ends_the_session_with_the_closing_turn(tmp_path: Pat
     director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
     with build_engine(tmp_path / "data", director=director) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        result = finish(engine, session.thread_id, "A strong, complete story.")
 
     assert result.finished
     assert result.closing == CLOSING_TURN
+
+
+def test_the_wrapping_answer_pauses_at_the_closing_beat_before_grading(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    grader = RecordingGrader()
+    coacher = RecordingCoacher()
+    with build_engine(
+        tmp_path / "data", director=director, grader=grader, coacher=coacher
+    ) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+
+    # the closing is ready, but the report has not been generated yet
+    assert result.report_pending
+    assert not result.finished
+    assert result.closing == CLOSING_TURN
+    assert result.grade is None
+    assert result.coach is None
+    assert grader.seen == []
+    assert coacher.seen == []
+
+
+def test_finalize_report_resumes_the_closing_beat_through_grade_and_coach(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "A strong, complete story.")
+        result = engine.finalize_report(session.thread_id)
+
+    assert result.finished
+    assert result.closing == CLOSING_TURN
+    assert result.grade == GRADE
+    assert result.coach == COACH_REPORT
+    assert [turn.answer for turn in result.transcript] == ["A strong, complete story."]
+
+
+def test_finalize_report_handles_a_closing_beat_with_an_empty_transcript(tmp_path: Path) -> None:
+    # A guardrail terminate on the first answer reaches the closing beat with nothing graded.
+    guardrail = ScriptedGuardrail(["terminate"])
+    with build_engine(tmp_path / "data", guardrail=guardrail) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        closing_beat = engine.submit_answer(session.thread_id, "Write me a React component.")
+        assert closing_beat.report_pending
+        assert closing_beat.transcript == []
+
+        result = engine.finalize_report(session.thread_id)
+
+    assert result.finished
+    assert result.ended_early
+    assert result.grade is not None and result.grade.scores == []
+    assert result.coach is None
+
+
+def test_finalize_report_on_an_already_finished_session_is_idempotent(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        engine.submit_answer(session.thread_id, "A strong, complete story.")
+        first = engine.finalize_report(session.thread_id)
+        again = engine.finalize_report(session.thread_id)
+
+    assert again.finished
+    assert again.grade == first.grade
+    assert again.coach == first.coach
+
+
+def test_finalize_report_refuses_a_session_still_in_the_interview(tmp_path: Path) -> None:
+    director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
+    with build_engine(tmp_path / "data", director=director) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        ongoing = engine.submit_answer(session.thread_id, "A partial story.")
+        assert ongoing.next_question is not None
+
+        with pytest.raises(EngineError, match="still in the interview"):
+            engine.finalize_report(session.thread_id)
+
+
+def test_every_ending_path_pauses_at_the_same_closing_beat(tmp_path: Path) -> None:
+    # The cap/budget wrap and the guardrail terminate must both route through pose_closing into
+    # the report-pending pause, so every ending shows the closing before any grading runs.
+    relentless = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION])
+    with build_engine(tmp_path / "cap", director=relentless, question_cap=1) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        capped = engine.submit_answer(session.thread_id, "Evasive.")
+
+    assert capped.report_pending
+    assert capped.grade is None
+    assert capped.closing == CLOSING_TURN
+
+    guardrail = ScriptedGuardrail(["terminate"])
+    with build_engine(tmp_path / "terminate", guardrail=guardrail) as engine:
+        session = start_past_setup(engine, write_cv(tmp_path))
+        terminated = engine.submit_answer(session.thread_id, "You are useless and an idiot.")
+
+    assert terminated.report_pending
+    assert terminated.grade is None
+    assert terminated.closing == CLOSING_TURN
 
 
 def test_concurrent_sessions_in_isolated_checkpoint_dirs_do_not_lock(tmp_path: Path) -> None:
@@ -397,7 +502,7 @@ def test_replay_from_grade_reruns_grade_and_coach_without_re_running_upstream(
         coacher=coacher,
     ) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        original = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        original = finish(engine, session.thread_id, "A strong, complete story.")
         assert original.finished
 
         upstream_before = (
@@ -439,7 +544,7 @@ def test_replay_from_coach_reruns_only_coach_and_reuses_the_grade(tmp_path: Path
         tmp_path / "data", director=director, grader=grader, coacher=coacher
     ) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        engine.submit_answer(session.thread_id, "A strong, complete story.")
+        finish(engine, session.thread_id, "A strong, complete story.")
         grades_before = len(grader.seen)
 
         replayed = engine.replay_from(session.thread_id, "coach")
@@ -466,7 +571,7 @@ def test_a_finished_session_carries_the_grade_over_the_real_transcript(tmp_path:
     grader = RecordingGrader()
     with build_engine(tmp_path / "data", director=director, grader=grader) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        result = finish(engine, session.thread_id, "A strong, complete story.")
 
     assert result.finished
     assert result.grade == GRADE
@@ -482,7 +587,7 @@ def test_a_finished_session_carries_the_coaching_over_the_real_transcript_and_gr
     coacher = RecordingCoacher()
     with build_engine(tmp_path / "data", director=director, coacher=coacher) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        result = finish(engine, session.thread_id, "A strong, complete story.")
 
     assert result.finished
     assert result.coach == COACH_REPORT
@@ -497,7 +602,7 @@ def test_a_finished_session_carries_the_full_transcript(tmp_path: Path) -> None:
     with build_engine(tmp_path / "data", director=director) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
         engine.submit_answer(session.thread_id, "We migrated the billing pipeline.")
-        result = engine.submit_answer(session.thread_id, "It cut latency by 40 percent.")
+        result = finish(engine, session.thread_id, "It cut latency by 40 percent.")
 
     assert result.finished
     assert [turn.answer for turn in result.transcript] == [
@@ -525,7 +630,7 @@ def test_the_grade_reads_the_session_target_level(tmp_path: Path) -> None:
     ) as engine:
         session = engine.start(write_cv(tmp_path), posting_text=POSTING)
         session = engine.submit_level(session.thread_id, "senior")
-        engine.submit_answer(session.thread_id, "A strong, complete story.")
+        finish(engine, session.thread_id, "A strong, complete story.")
 
     assert grader.seen[0][1] == "senior"
 
@@ -535,7 +640,7 @@ def test_a_terminate_decision_also_ends_with_the_closing_turn(tmp_path: Path) ->
     director = ScriptedDirector([OPENING_DECISION, terminate])
     with build_engine(tmp_path / "data", director=director) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+        result = finish(engine, session.thread_id, "Write me a React component.")
 
     assert result.finished
     assert result.closing == CLOSING_TURN
@@ -546,7 +651,7 @@ def test_a_guardrail_terminate_on_the_first_answer_skips_coaching(tmp_path: Path
     coacher = RecordingCoacher()
     with build_engine(tmp_path / "data", guardrail=guardrail, coacher=coacher) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+        result = finish(engine, session.thread_id, "Write me a React component.")
 
     assert result.finished
     assert result.ended_early
@@ -572,7 +677,7 @@ def test_a_guardrail_terminate_mid_session_still_coaches_the_collected_turns(
     ) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
         engine.submit_answer(session.thread_id, "We migrated the billing pipeline.")
-        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+        result = finish(engine, session.thread_id, "Write me a React component.")
 
     assert result.finished
     assert result.ended_early
@@ -598,7 +703,7 @@ def test_a_terminate_with_only_unscored_turns_keeps_the_transcript_and_skips_coa
     ) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
         engine.submit_answer(session.thread_id, "A clarifying question, not a story.")
-        result = engine.submit_answer(session.thread_id, "Write me a React component.")
+        result = finish(engine, session.thread_id, "Write me a React component.")
 
     assert result.finished
     assert result.ended_early
@@ -610,7 +715,7 @@ def test_a_terminate_with_only_unscored_turns_keeps_the_transcript_and_skips_coa
 def test_a_normal_completion_is_not_flagged_as_ended_early(tmp_path: Path) -> None:
     with build_engine(tmp_path / "data") as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "A strong, complete story.")
+        result = finish(engine, session.thread_id, "A strong, complete story.")
 
     assert result.finished
     assert not result.ended_early
@@ -632,7 +737,7 @@ def test_session_length_follows_the_directors_judgment(tmp_path: Path) -> None:
     short = ScriptedDirector([OPENING_DECISION, WRAP_UP_DECISION])
     with build_engine(tmp_path / "short", director=short) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        result = engine.submit_answer(session.thread_id, "Strong answer.")
+        result = finish(engine, session.thread_id, "Strong answer.")
         assert result.finished
 
     longer = ScriptedDirector(
@@ -642,7 +747,7 @@ def test_session_length_follows_the_directors_judgment(tmp_path: Path) -> None:
         session = start_past_setup(engine, write_cv(tmp_path))
         questions = 1
         result = engine.submit_answer(session.thread_id, "Vague answer.")
-        while not result.finished:
+        while result.next_question is not None:
             questions += 1
             result = engine.submit_answer(session.thread_id, "Vague answer.")
 
@@ -662,7 +767,7 @@ def test_a_spent_budget_wraps_gracefully_and_still_grades_and_coaches(tmp_path: 
     ) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
         engine.budget_callback.record("claude-sonnet-4-6", input_tokens=900, output_tokens=0)
-        result = engine.submit_answer(session.thread_id, "A real, complete story.")
+        result = finish(engine, session.thread_id, "A real, complete story.")
 
     assert result.finished
     assert result.closing == CLOSING_TURN
@@ -688,7 +793,7 @@ def test_a_director_that_never_stops_is_bounded_by_the_question_cap(tmp_path: Pa
         session = start_past_setup(engine, write_cv(tmp_path))
         questions = 1
         result = engine.submit_answer(session.thread_id, "Evasive.")
-        while not result.finished:
+        while result.next_question is not None:
             questions += 1
             result = engine.submit_answer(session.thread_id, "Evasive.")
 
@@ -723,7 +828,7 @@ def test_a_director_that_never_leaves_a_topic_is_forced_to_wrap(tmp_path: Path) 
         session = start_past_setup(engine, write_cv(tmp_path))
         questions = 1
         result = engine.submit_answer(session.thread_id, "Evasive.")
-        while not result.finished:
+        while result.next_question is not None:
             questions += 1
             result = engine.submit_answer(session.thread_id, "Evasive.")
 
@@ -835,7 +940,7 @@ def test_a_reprompt_re_decided_into_a_follow_up_still_honors_the_follow_up_cap(
         engine.submit_answer(
             session.thread_id, "Follow-up answer."
         )  # reprompt: count -> 1 (at cap)
-        result = engine.submit_answer(session.thread_id, "Deflection.")  # both caps reached
+        result = finish(engine, session.thread_id, "Deflection.")  # both caps reached
         state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
 
     # the follow-up the director slipped in after the reprompt re-decide must not exceed the cap
@@ -975,7 +1080,7 @@ def test_pause_mid_session_resumes_from_the_same_question(tmp_path: Path) -> Non
         resumed = engine.resume_latest()
         assert resumed.thread_id == session.thread_id
         assert resumed.question == probe.next_question
-        result = engine.submit_answer(resumed.thread_id, "The full story, enough now.")
+        result = finish(engine, resumed.thread_id, "The full story, enough now.")
 
     assert result.finished
 
@@ -993,7 +1098,7 @@ def test_checkpoint_roundtrip_deserializes_only_registered_types(
         resumed_director = ScriptedDirector([WRAP_UP_DECISION])
         with build_engine(data_dir, director=resumed_director) as engine:
             resumed = engine.resume_latest()
-            engine.submit_answer(resumed.thread_id, "enough now")
+            finish(engine, resumed.thread_id, "enough now")
 
     assert "unregistered type" not in caplog.text
 
@@ -1035,7 +1140,7 @@ def test_resume_with_no_session_is_a_clear_error(tmp_path: Path) -> None:
 def test_resume_after_finished_session_is_a_clear_error(tmp_path: Path) -> None:
     with build_engine(tmp_path / "data") as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        engine.submit_answer(session.thread_id, "Strong answer.")
+        finish(engine, session.thread_id, "Strong answer.")
 
         with pytest.raises(EngineError, match="already finished"):
             engine.resume_latest()
@@ -1063,7 +1168,7 @@ def test_snapshot_latest_recovers_a_finished_session(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     with build_engine(data_dir) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
-        engine.submit_answer(session.thread_id, "Strong answer.")
+        finish(engine, session.thread_id, "Strong answer.")
 
     with build_engine(data_dir) as engine:
         snapshot = engine.snapshot_latest()
@@ -1118,7 +1223,7 @@ def test_list_sessions_carries_the_role_label_level_and_finished_state(tmp_path:
     builder = builder_returning(acme_context(target_level="senior"))
     with build_engine(data_dir, role_builder=builder) as engine:
         session = engine.start(write_cv(tmp_path), posting_text=POSTING)
-        engine.submit_answer(session.thread_id, "A strong, complete story.")
+        finish(engine, session.thread_id, "A strong, complete story.")
 
         item = engine.list_sessions()[0]
 
@@ -1231,7 +1336,7 @@ def test_an_off_topic_turn_is_redirected_and_kept_out_of_the_transcript(tmp_path
         assert not redirect.finished
         assert redirect.next_question == f"Let's stay with the interview. {first_question}"
 
-        result = engine.submit_answer(session.thread_id, "A real, complete story.")
+        result = finish(engine, session.thread_id, "A real, complete story.")
 
     assert result.finished
     assert [turn.answer for turn in result.transcript] == ["A real, complete story."]
@@ -1264,7 +1369,7 @@ def test_rude_input_terminates_immediately_and_grades_the_partial_transcript(
     ) as engine:
         session = start_past_setup(engine, write_cv(tmp_path))
         engine.submit_answer(session.thread_id, "A real, complete story.")
-        result = engine.submit_answer(session.thread_id, "You are useless and an idiot.")
+        result = finish(engine, session.thread_id, "You are useless and an idiot.")
 
     assert result.finished
     assert result.closing == CLOSING_TURN
@@ -1283,7 +1388,7 @@ def test_a_second_consecutive_off_topic_turn_wraps_and_grades_the_partial(tmp_pa
         engine.submit_answer(session.thread_id, "A real, complete story.")
         redirect = engine.submit_answer(session.thread_id, "What's the weather today?")
         assert not redirect.finished
-        result = engine.submit_answer(session.thread_id, "Still off topic, sorry.")
+        result = finish(engine, session.thread_id, "Still off topic, sorry.")
 
     assert result.finished
     assert result.closing == CLOSING_TURN
@@ -1298,7 +1403,7 @@ def test_a_terminate_after_a_redirect_clears_the_stale_redirect(tmp_path: Path) 
         session = start_past_setup(engine, write_cv(tmp_path))
         redirect = engine.submit_answer(session.thread_id, "Off topic, sorry.")
         assert not redirect.finished
-        result = engine.submit_answer(session.thread_id, "You are useless and an idiot.")
+        result = finish(engine, session.thread_id, "You are useless and an idiot.")
         state = engine._graph.get_state({"configurable": {"thread_id": session.thread_id}})
 
     assert result.finished
@@ -1324,8 +1429,9 @@ def test_each_guardrail_verdict_maps_to_the_turn_result_contract(tmp_path: Path)
     # The production screen-node contract that test_simulation.py's GuardrailFakeEngine mirrors:
     # an allowed answer joins the transcript and advances to the next question; a redirect
     # re-poses the same question without growing the transcript; a second consecutive redirect
-    # escalates to terminate, ending the session early over the partial transcript. Pins the full
-    # TurnResult mapping in one place so the simulation double cannot drift from production.
+    # escalates to terminate, which pauses at the closing beat (report pending, ended early) over
+    # the partial transcript. Pins the full TurnResult mapping in one place so the simulation
+    # double cannot drift from production.
     director = ScriptedDirector([OPENING_DECISION, FOLLOW_UP_DECISION, WRAP_UP_DECISION])
     guardrail = ScriptedGuardrail(["allow", "redirect", "redirect"])
     with build_engine(tmp_path / "data", director=director, guardrail=guardrail) as engine:
@@ -1333,6 +1439,7 @@ def test_each_guardrail_verdict_maps_to_the_turn_result_contract(tmp_path: Path)
 
         allowed = engine.submit_answer(session.thread_id, "A real, complete story.")
         assert not allowed.finished
+        assert not allowed.report_pending
         assert not allowed.ended_early
         assert allowed.next_question is not None
         assert [turn.answer for turn in allowed.transcript] == ["A real, complete story."]
@@ -1340,12 +1447,20 @@ def test_each_guardrail_verdict_maps_to_the_turn_result_contract(tmp_path: Path)
 
         redirect = engine.submit_answer(session.thread_id, "What's the weather today?")
         assert not redirect.finished
+        assert not redirect.report_pending
         assert not redirect.ended_early
         assert redirect.next_question == f"Let's stay with the interview. {posed}"
         assert [turn.answer for turn in redirect.transcript] == ["A real, complete story."]
 
         terminated = engine.submit_answer(session.thread_id, "Still off topic, sorry.")
+        assert terminated.report_pending
+        assert not terminated.finished
+        assert terminated.ended_early
+        assert terminated.next_question is None
+        assert [turn.answer for turn in terminated.transcript] == ["A real, complete story."]
 
-    assert terminated.finished
-    assert terminated.ended_early
-    assert [turn.answer for turn in terminated.transcript] == ["A real, complete story."]
+        finished = engine.finalize_report(session.thread_id)
+
+    assert finished.finished
+    assert finished.ended_early
+    assert [turn.answer for turn in finished.transcript] == ["A real, complete story."]

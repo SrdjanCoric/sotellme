@@ -455,14 +455,24 @@ class _FinishingEngine:
     def __init__(self, grade: SessionGrade, coach: CoachReport) -> None:
         self._grade = grade
         self._coach = coach
+        self._answer = ""
 
     def submit_answer(self, thread_id: str, answer: str) -> TurnResult:
+        self._answer = answer
+        return TurnResult(
+            next_question=None,
+            closing="Thanks for walking me through it.",
+            report_pending=True,
+            transcript=[Turn(question="Tell me about a project.", answer=answer)],
+        )
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
         return TurnResult(
             next_question=None,
             closing="Thanks for walking me through it.",
             grade=self._grade,
             coach=self._coach,
-            transcript=[Turn(question="Tell me about a project.", answer=answer)],
+            transcript=[Turn(question="Tell me about a project.", answer=self._answer)],
         )
 
     def session_usage(self) -> dict[str, object]:
@@ -492,6 +502,58 @@ def test_run_session_survives_an_unwritable_report_directory(
     cli._run_session(Console(), engine, session, {})  # type: ignore[arg-type]
 
     assert "Read-only file system" in capsys.readouterr().out
+
+
+class _ResumedClosingBeatEngine:
+    """A session reopened at the closing beat: no question to answer, only the report beat left."""
+
+    def __init__(self, grade: SessionGrade, coach: CoachReport) -> None:
+        self._grade = grade
+        self._coach = coach
+        self.finalized = False
+
+    def submit_answer(self, thread_id: str, answer: str) -> TurnResult:  # pragma: no cover
+        raise AssertionError("a resumed closing beat has no pending question to answer")
+
+    def finalize_report(self, thread_id: str) -> TurnResult:
+        self.finalized = True
+        return TurnResult(
+            next_question=None,
+            closing="That's a wrap, thanks.",
+            grade=self._grade,
+            coach=self._coach,
+            transcript=[Turn(question="Tell me about a project.", answer="I led the migration.")],
+        )
+
+    def session_usage(self) -> dict[str, object]:
+        return {}
+
+
+def test_run_session_finalizes_a_session_reopened_at_the_closing_beat(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A session interrupted between the closing pause and report generation reopens with the
+    # question already gone and the report pending: resuming must still run the report beat.
+    monkeypatch.setattr(cli, "_interactive", lambda: False)
+    monkeypatch.setattr(cli, "write_report", lambda *a, **k: tmp_path / "report.md")
+    grade = SessionGrade(scores=[score("Tell me about a project.")])
+    coach = CoachReport(summary="Tighten the result.", answer_advice=[], drills=[], study_plan="")
+    engine = _ResumedClosingBeatEngine(grade, coach)
+    session = SessionSnapshot(
+        thread_id="t1",
+        profile=_profile(),
+        needs_level=False,
+        question=None,
+        report_pending=True,
+        closing="That's a wrap, thanks.",
+    )
+
+    cli._run_session(Console(), engine, session, {})  # type: ignore[arg-type]
+
+    out = capsys.readouterr().out
+    assert engine.finalized
+    assert "That's a wrap, thanks." in out
+    assert "Scorecard" in out
 
 
 def test_cost_summary_flags_models_it_could_not_price() -> None:
