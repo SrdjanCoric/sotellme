@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import sotellme.tracing
+import sotellme.web
 from sotellme.assessor import StarFlags
 from sotellme.catalog import default_catalog
 from sotellme.cli import (
@@ -24,14 +25,20 @@ from sotellme.role import RoleContextError
 from sotellme.web import (
     DEFAULT_CHOICE,
     LINK_MODE,
+    SESSION_PARAM,
     SETUP_ERRORS,
     TEXT_MODE,
     TURN_ERRORS,
     WebState,
+    _anchor_session,
+    _begin_session,
     _ModelProgress,
+    _open_session,
+    _recover,
     _render_closing,
     _render_level,
     _render_test_autopilot,
+    _start_new_interview,
     _tracing_callbacks,
     agent_overrides_from_selections,
     agent_step_label,
@@ -43,7 +50,6 @@ from sotellme.web import (
     posting_to_resolve,
     render_report_view,
     resolve_report_view,
-    resumable_state,
     save_upload,
     session_primary_line,
     session_secondary_line,
@@ -174,35 +180,6 @@ def test_a_finished_snapshot_recovers_the_report_phase() -> None:
     assert state.transcript == transcript
     assert state.closing == "Thanks for walking me through it."
     assert state.coach is coach
-
-
-def test_a_finished_snapshot_does_not_auto_resume() -> None:
-    grade = SessionGrade(scores=[])
-    coach = CoachReport(summary="Tighten the result.", answer_advice=[], drills=[], study_plan="")
-    snapshot = SessionSnapshot(
-        thread_id="t1",
-        question=None,
-        needs_level=False,
-        profile=profile(),
-        finished=True,
-        closing="Thanks.",
-        grade=grade,
-        coach=coach,
-    )
-
-    assert resumable_state(snapshot) is None
-
-
-def test_an_unfinished_snapshot_is_resumed() -> None:
-    snapshot = SessionSnapshot(
-        thread_id="t1", question="Tell me about a project.", needs_level=False, profile=profile()
-    )
-
-    state = resumable_state(snapshot)
-
-    assert state is not None
-    assert phase_of(state) == "interview"
-    assert state.question == "Tell me about a project."
 
 
 def test_session_primary_line_joins_company_and_role() -> None:
@@ -538,7 +515,9 @@ class _FakeSessionState(dict[str, object]):
         self[name] = value
 
 
-def _fake_interview_streamlit(session_state: _FakeSessionState) -> types.SimpleNamespace:
+def _fake_interview_streamlit(
+    session_state: _FakeSessionState, query_params: dict[str, str] | None = None
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         caption=lambda *a, **k: None,
         chat_message=lambda role: types.SimpleNamespace(write=lambda content: None),
@@ -548,6 +527,7 @@ def _fake_interview_streamlit(session_state: _FakeSessionState) -> types.SimpleN
         button=lambda *a, **k: True,
         error=lambda *a, **k: None,
         rerun=lambda *a, **k: None,
+        query_params=query_params if query_params is not None else {},
         session_state=session_state,
     )
 
@@ -581,7 +561,10 @@ def test_render_closing_finalizes_and_advances_to_the_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session_state = _FakeSessionState()
-    monkeypatch.setitem(sys.modules, "streamlit", _fake_interview_streamlit(session_state))
+    query_params: dict[str, str] = {}
+    monkeypatch.setitem(
+        sys.modules, "streamlit", _fake_interview_streamlit(session_state, query_params)
+    )
     engine = _TwoBeatEngine()
 
     _render_closing(engine, _closing_beat())  # type: ignore[arg-type]
@@ -592,6 +575,7 @@ def test_render_closing_finalizes_and_advances_to_the_report(
     assert phase_of(advanced) == "report"
     assert advanced.grade is not None and advanced.coach is not None
     assert "history_items" not in session_state
+    assert query_params[SESSION_PARAM] == "t1"
 
 
 def test_test_autopilot_drives_through_the_closing_beat_to_the_report(
@@ -762,3 +746,204 @@ def test_tracing_on_without_the_package_warns_and_continues(
 
     assert _tracing_callbacks() == []
     assert shown and "sotellme[web,tracing]" in shown[0]
+
+
+class _OpenByIdEngine:
+    """Engine double that reopens a thread by id, raising for an unknown one."""
+
+    def __init__(self, snapshots: dict[str, SessionSnapshot]) -> None:
+        self._snapshots = snapshots
+
+    def snapshot(self, thread_id: str) -> SessionSnapshot:
+        try:
+            return self._snapshots[thread_id]
+        except KeyError as exc:
+            raise EngineError("This session didn't get far enough to reopen.") from exc
+
+
+def _fake_recover_streamlit(
+    session_state: _FakeSessionState,
+    query_params: dict[str, str],
+    warnings: list[str],
+) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        session_state=session_state,
+        query_params=query_params,
+        warning=warnings.append,
+    )
+
+
+def _finished_snapshot(thread_id: str) -> SessionSnapshot:
+    return SessionSnapshot(
+        thread_id=thread_id,
+        question=None,
+        needs_level=False,
+        profile=profile(),
+        finished=True,
+        closing="Thanks.",
+        grade=SessionGrade(scores=[]),
+        coach=CoachReport(summary="s", answer_advice=[], drills=[], study_plan=""),
+    )
+
+
+def test_recover_reopens_a_finished_thread_named_in_the_url_to_its_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _OpenByIdEngine({"done": _finished_snapshot("done")})
+    monkeypatch.setattr(sotellme.web, "_recovery_engine", lambda catalog: engine)
+    monkeypatch.setitem(
+        sys.modules,
+        "streamlit",
+        _fake_recover_streamlit(_FakeSessionState(), {SESSION_PARAM: "done"}, []),
+    )
+
+    state = _recover(default_catalog())
+
+    assert state is not None
+    assert phase_of(state) == "report"
+    assert state.thread_id == "done"
+
+
+def test_recover_reopens_an_in_progress_thread_named_in_the_url_to_its_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = SessionSnapshot(
+        thread_id="live",
+        question="Tell me about a project.",
+        needs_level=False,
+        profile=profile(),
+    )
+    engine = _OpenByIdEngine({"live": snapshot})
+    monkeypatch.setattr(sotellme.web, "_recovery_engine", lambda catalog: engine)
+    monkeypatch.setitem(
+        sys.modules,
+        "streamlit",
+        _fake_recover_streamlit(_FakeSessionState(), {SESSION_PARAM: "live"}, []),
+    )
+
+    state = _recover(default_catalog())
+
+    assert state is not None
+    assert phase_of(state) == "interview"
+    assert state.question == "Tell me about a project."
+
+
+def test_recover_without_a_session_param_is_a_cold_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A bare visit starts fresh, never auto-resuming the latest session.
+    engine = _OpenByIdEngine({"live": _finished_snapshot("live")})
+    monkeypatch.setattr(sotellme.web, "_recovery_engine", lambda catalog: engine)
+    monkeypatch.setitem(
+        sys.modules,
+        "streamlit",
+        _fake_recover_streamlit(_FakeSessionState(), {}, []),
+    )
+
+    assert _recover(default_catalog()) is None
+
+
+def test_recover_clears_a_blank_session_param_on_cold_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    query_params = {SESSION_PARAM: ""}
+    monkeypatch.setitem(
+        sys.modules,
+        "streamlit",
+        _fake_recover_streamlit(_FakeSessionState(), query_params, []),
+    )
+
+    assert _recover(default_catalog()) is None
+    assert SESSION_PARAM not in query_params
+
+
+def test_recover_degrades_to_setup_when_the_url_thread_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _OpenByIdEngine({})
+    monkeypatch.setattr(sotellme.web, "_recovery_engine", lambda catalog: engine)
+    warnings: list[str] = []
+    query_params = {SESSION_PARAM: "ghost"}
+    monkeypatch.setitem(
+        sys.modules,
+        "streamlit",
+        _fake_recover_streamlit(_FakeSessionState(), query_params, warnings),
+    )
+
+    assert _recover(default_catalog()) is None
+    assert warnings
+    assert SESSION_PARAM not in query_params
+
+
+def test_opening_a_session_anchors_it_in_the_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _OpenByIdEngine({"past": _finished_snapshot("past")})
+    monkeypatch.setattr(sotellme.web, "_recovery_engine", lambda catalog: engine)
+    query_params: dict[str, str] = {}
+    monkeypatch.setitem(
+        sys.modules,
+        "streamlit",
+        _fake_recover_streamlit(_FakeSessionState(), query_params, []),
+    )
+
+    state = _open_session(default_catalog(), "past")
+
+    assert state is not None
+    assert query_params[SESSION_PARAM] == "past"
+
+
+def test_starting_a_session_anchors_it_before_the_rerun(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The anchor must land in the URL at start, so a reconnect that drops the
+    # in-memory session can still recover the thread from the URL.
+    session_state = _FakeSessionState()
+    session_state["new_interview"] = True
+    query_params: dict[str, str] = {}
+    monkeypatch.setitem(
+        sys.modules, "streamlit", _fake_new_interview_streamlit(session_state, query_params)
+    )
+    snapshot = SessionSnapshot(
+        thread_id="fresh",
+        question="Tell me about a project.",
+        needs_level=False,
+        profile=profile(),
+    )
+
+    _begin_session(_OpenByIdEngine({}), snapshot)  # type: ignore[arg-type]
+
+    assert query_params[SESSION_PARAM] == "fresh"
+    assert isinstance(session_state["state"], WebState)
+    assert "engine" in session_state
+    assert "new_interview" not in session_state
+
+
+def test_anchor_session_writes_the_thread_id_to_the_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    query_params: dict[str, str] = {}
+    monkeypatch.setitem(sys.modules, "streamlit", types.SimpleNamespace(query_params=query_params))
+
+    _anchor_session("t42")
+
+    assert query_params[SESSION_PARAM] == "t42"
+
+
+def _fake_new_interview_streamlit(
+    session_state: _FakeSessionState, query_params: dict[str, str]
+) -> types.SimpleNamespace:
+    return types.SimpleNamespace(
+        session_state=session_state,
+        query_params=query_params,
+        rerun=lambda *a, **k: None,
+    )
+
+
+def test_starting_a_new_interview_clears_the_url_anchor(monkeypatch: pytest.MonkeyPatch) -> None:
+    session_state = _FakeSessionState()
+    session_state["state"] = interviewing("Tell me about a project.")
+    query_params = {SESSION_PARAM: "t1"}
+    monkeypatch.setitem(
+        sys.modules, "streamlit", _fake_new_interview_streamlit(session_state, query_params)
+    )
+
+    _start_new_interview()
+
+    assert SESSION_PARAM not in query_params
+    assert "state" not in session_state
+    assert session_state["new_interview"] is True

@@ -58,6 +58,8 @@ TRACING_OFF_HINT = (
 
 HISTORY_HEIGHT = 300
 
+SESSION_PARAM = "session"
+
 TURN_ERRORS = (AssessorError, DirectorError, GradingError, CoachingError, EngineError)
 
 SETUP_ERRORS = (*TURN_ERRORS, CVInputError, ProfileParseError, RoleContextError, OSError)
@@ -145,14 +147,6 @@ def state_after_finalize(state: WebState, result: TurnResult) -> WebState:
         coach=result.coach,
         transcript=list(result.transcript),
     )
-
-
-def resumable_state(snapshot: SessionSnapshot) -> WebState | None:
-    """Return the snapshot as a resumable state, or None when already reported."""
-    state = state_from_snapshot(snapshot)
-    if phase_of(state) == "report":
-        return None
-    return state
 
 
 def session_primary_line(item: SessionListItem) -> str:
@@ -341,11 +335,11 @@ class _ModelProgress(BaseCallbackHandler):
 def run() -> None:
     """Render the full Streamlit app and route to the current phase.
 
-    Configures the page, loads the catalog, recovers any in-flight or resumable
-    session, renders the sidebar, and dispatches to the setup, level, interview,
-    or report view depending on the recovered state. Shows an error and returns
-    early when the catalog cannot be loaded, and falls back to setup when no
-    engine is available for an active session.
+    Configures the page, loads the catalog, recovers the session named by the URL's
+    `?session=` anchor (keeping that anchor in sync), renders the sidebar, and
+    dispatches to the setup, level, interview, or report view depending on the
+    recovered state. Shows an error and returns early when the catalog cannot be
+    loaded, and falls back to setup when no engine is available for an active session.
     """
     import streamlit as st
 
@@ -405,7 +399,14 @@ def _recovery_engine(catalog: Catalog) -> InterviewEngine | None:
 
 
 def _recover(catalog: Catalog) -> WebState | None:
-    """Recover the web state to render from session state or the latest session."""
+    """Recover the web state to render from session state or the URL's session anchor.
+
+    A refresh or reconnect drops the in-memory session, so the URL is the durable
+    anchor: a `?session=<thread_id>` param reopens that exact thread to its current
+    phase (the report when finished, the pending question when in progress), and a
+    bare visit with no anchor is a cold start. An unknown or too-early thread degrades
+    to setup rather than crashing.
+    """
     import streamlit as st
 
     pending = st.session_state.pop("pending_thread", None)
@@ -418,18 +419,30 @@ def _recover(catalog: Catalog) -> WebState | None:
         return existing
     if st.session_state.get("new_interview"):
         return None
-    engine = _recovery_engine(catalog)
-    if engine is None:
-        return None
-    st.session_state.engine = engine
-    try:
-        snapshot = engine.snapshot_latest()
-    except EngineError:
-        return None
-    state = resumable_state(snapshot)
-    if state is not None:
-        st.session_state.state = state
-    return state
+    anchored = st.query_params.get(SESSION_PARAM)
+    if anchored:
+        opened = _open_session(catalog, anchored)
+        if opened is None:
+            _clear_session_anchor()
+        return opened
+    # No usable anchor: drop any leftover (e.g. a hand-typed bare ?session=) and cold start.
+    _clear_session_anchor()
+    return None
+
+
+def _anchor_session(thread_id: str) -> None:
+    """Anchor the active session in the URL so a refresh or reconnect can reopen it."""
+    import streamlit as st
+
+    st.query_params[SESSION_PARAM] = thread_id
+
+
+def _clear_session_anchor() -> None:
+    """Drop the session anchor from the URL."""
+    import streamlit as st
+
+    if SESSION_PARAM in st.query_params:
+        del st.query_params[SESSION_PARAM]
 
 
 def _listing_engine(catalog: Catalog) -> InterviewEngine | None:
@@ -451,6 +464,7 @@ def _start_new_interview() -> None:
 
     for key in ("state", "report_path"):
         st.session_state.pop(key, None)
+    _clear_session_anchor()
     st.session_state.new_interview = True
     st.rerun()
 
@@ -479,6 +493,7 @@ def _open_session(catalog: Catalog, thread_id: str) -> WebState | None:
     st.session_state.state = state
     st.session_state.pop("report_path", None)
     st.session_state.pop("new_interview", None)
+    _anchor_session(thread_id)
     return state
 
 
@@ -607,9 +622,22 @@ def _render_setup(catalog: Catalog) -> None:
     except SETUP_ERRORS as exc:
         st.error(str(exc))
         return
+    _begin_session(engine, snapshot)
+
+
+def _begin_session(engine: InterviewEngine, snapshot: SessionSnapshot) -> None:
+    """Install a freshly started session and anchor it in the URL before rerunning.
+
+    The anchor is written before the rerun, not on the next render, so the session
+    survives even if Streamlit drops the in-memory state across the rerun: the URL
+    still names the thread, and recovery reopens it from the checkpoint.
+    """
+    import streamlit as st
+
     st.session_state.engine = engine
     st.session_state.state = state_from_snapshot(snapshot)
     st.session_state.pop("new_interview", None)
+    _anchor_session(snapshot.thread_id)
     _invalidate_history()
     st.rerun()
 
@@ -680,6 +708,7 @@ def _render_closing(engine: InterviewEngine, state: WebState) -> None:
             st.error(str(exc))
             return
     st.session_state.state = state_after_finalize(state, result)
+    _anchor_session(state.thread_id)
     _invalidate_history()
     st.rerun()
 
